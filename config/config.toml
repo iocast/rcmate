@@ -1,0 +1,14 @@
+[general]
+log_path = "~/.local/share/rcmate/logs"
+log_level = "info"
+
+[rclone]
+bin = "rclone"
+config = '~/.config/rcmate/rclone.conf'
+workdir = '~/.local/share/rcmate/bisync'
+
+[[sync_pairs]]
+name = "Test copy"
+type = "copy"
+source = "~/a/x.tmp"
+destination = "~/b"
