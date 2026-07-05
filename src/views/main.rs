@@ -17,7 +17,7 @@ pub struct MainView;
 
 impl MainView {
     pub fn help_text(&self) -> String {
-        "q: quit | ↑/↓: Up/Down | SPACE: select | a: all | ALT+s: run | o: bisync opts | ALT+e: error | e: edit | ALT+SHIFT+I: info".to_string()
+        "q: quit | ↑/↓: Up/Down | SPACE: select | a: all | ALT+s: run | ALT+p: progress | o: bisync opts | ALT+e: error | e: edit | ALT+SHIFT+I: info".to_string()
     }
 
     pub fn handle_key_event(&mut self, key_event: KeyEvent, app: &mut App) -> ViewAction {
@@ -136,6 +136,22 @@ impl MainView {
             KeyCode::Char('a') => {
                 app.events.send(AppEvent::SelectAll);
                 ViewAction::None
+            }
+            KeyCode::Char('p') if key_event.modifiers == KeyModifiers::ALT => {
+                if let Some(idx) = app.sync_pairs_tbl_state.selected() {
+                    let sync_pairs = app.sync_pairs.try_read().unwrap();
+                    if let Some(pair_arc) = sync_pairs.get(idx) {
+                        let pair = pair_arc.try_read().unwrap();
+                        let key = pair.key;
+                        ViewAction::OpenPopup(View::Progress(
+                            crate::views::progress::ProgressView::new(key),
+                        ))
+                    } else {
+                        ViewAction::None
+                    }
+                } else {
+                    ViewAction::None
+                }
             }
             KeyCode::Up => {
                 app.events.send(AppEvent::Previous);

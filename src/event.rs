@@ -27,6 +27,7 @@ pub enum Event {
     App(AppEvent),
     /// Progress events.
     Progress(ProgressState),
+    FileProgress(FileProgressState),
 }
 
 /// Application events.
@@ -102,6 +103,27 @@ impl HasKey for ProgressState {
             ProgressState::Error(s) => &s.key,
         }
     }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct FileTransferInfo {
+    pub name: String,
+    pub src: String,
+    pub dst: String,
+    pub size: i64,
+    pub bytes: i64,
+    pub percentage: u8,
+    pub speed: f64,
+    pub eta: f64,
+    pub status: String,
+    pub op_key: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct FileProgressState {
+    pub key: Uuid,
+    pub transferring: Vec<FileTransferInfo>,
+    pub transferred: Vec<FileTransferInfo>,
 }
 
 /// Terminal event handler.

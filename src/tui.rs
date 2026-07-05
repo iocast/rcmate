@@ -16,7 +16,7 @@ use crate::{
     event::Severity,
     views::{
         ViewAction, about::AboutView, bisync_options::BisyncOptionsView, edit::EditView,
-        main::MainView,
+        main::MainView, progress::ProgressView,
     },
 };
 
@@ -27,6 +27,7 @@ pub enum View {
     BisyncOptions(BisyncOptionsView),
     Message(Message),
     About(AboutView),
+    Progress(ProgressView),
 }
 
 impl View {
@@ -37,6 +38,7 @@ impl View {
             View::BisyncOptions(v) => v.help_text(),
             View::About(v) => v.help_text(),
             View::Message(msg) => msg.help_text(),
+            View::Progress(v) => v.help_text(),
         }
     }
 
@@ -65,6 +67,7 @@ impl View {
                 }
                 ViewAction::None
             }
+            View::Progress(v) => v.handle_key_event(key_event, app),
         }
     }
 
@@ -75,6 +78,7 @@ impl View {
             View::BisyncOptions(v) => v.render(area, buf, app),
             View::About(v) => v.render(area, buf, app),
             View::Message(msg) => Widget::render(msg.clone(), area, buf),
+            View::Progress(v) => v.render(area, buf, app),
         }
     }
 }

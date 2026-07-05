@@ -3,7 +3,8 @@ use crate::config::{
     SyncType,
 };
 use crate::event::{
-    AppEvent, ErrorState, Event, EventHandler, FinishedState, HasKey, ProgressState, TransferState,
+    AppEvent, ErrorState, Event, EventHandler, FileTransferInfo, FinishedState, HasKey,
+    ProgressState, TransferState,
 };
 use crate::rclone_request::Builder;
 use crate::tui::{ActionHandler, View};
@@ -12,6 +13,7 @@ use color_eyre::{Result, eyre::Context, eyre::eyre};
 use ratatui::DefaultTerminal;
 use reqwest;
 use serde_json;
+use std::collections::{HashMap, HashSet};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -46,6 +48,18 @@ pub struct App {
     rcd_child: Option<tokio::process::Child>,
     pub(crate) config_path: PathBuf,
     pub(crate) rclone_version: Arc<RwLock<String>>,
+    pub file_progress: Arc<
+        RwLock<
+            HashMap<
+                Uuid,
+                (
+                    Vec<crate::event::FileTransferInfo>,
+                    Vec<crate::event::FileTransferInfo>,
+                    HashSet<String>,
+                ),
+            >,
+        >,
+    >,
 }
 
 impl Default for App {
@@ -76,6 +90,7 @@ impl Default for App {
             rcd_child: None,
             config_path: PathBuf::from("config.toml"),
             rclone_version: Arc::new(RwLock::new("Checking...".to_string())),
+            file_progress: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 }
@@ -147,6 +162,8 @@ impl App {
         if !app.sync_pairs.try_read().unwrap().is_empty() {
             app.sync_pairs_tbl_state.select(Some(0));
         }
+
+        app.file_progress = Arc::new(RwLock::new(HashMap::new()));
         Ok(app)
     }
 
@@ -203,6 +220,33 @@ impl App {
                     AppEvent::Quit => self.quit(),
                 },
                 Event::Progress(state) => self.handle_progress(state).await,
+                Event::FileProgress(state) => {
+                    let mut fp = self.file_progress.write().await;
+                    let entry = fp
+                        .entry(state.key)
+                        .or_insert_with(|| (Vec::new(), Vec::new(), HashSet::new()));
+
+                    // 1. Overwrite active transfers
+                    entry.0 = state.transferring;
+
+                    // 2. Accumulate completed transfers using op_key
+                    for t in state.transferred {
+                        if entry.2.contains(&t.op_key) {
+                            // This exact operation already exists, update if bytes increased
+                            if let Some(existing) =
+                                entry.1.iter_mut().find(|x| x.op_key == t.op_key)
+                            {
+                                if t.bytes > existing.bytes {
+                                    *existing = t;
+                                }
+                            }
+                        } else {
+                            // New operation, add it as a separate row
+                            entry.2.insert(t.op_key.clone());
+                            entry.1.push(t);
+                        }
+                    }
+                }
             }
         }
         self.stop_rcd().await;
@@ -580,6 +624,214 @@ impl SyncPairConfig {
                                 0
                             }
                             .clamp(0, 100);
+
+                            // --- NEW CODE: Extract per-file progress ---
+                            let mut transferring = Vec::new();
+
+                            // 1. Parse active transferring
+                            if let Some(arr) =
+                                stats_json.get("transferring").and_then(|v| v.as_array())
+                            {
+                                for item in arr {
+                                    let name = item
+                                        .get("name")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("")
+                                        .to_string();
+                                    let src = item
+                                        .get("srcFs")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("")
+                                        .to_string();
+                                    let dst = item
+                                        .get("dstFs")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("")
+                                        .to_string();
+                                    let size =
+                                        item.get("size").and_then(|v| v.as_i64()).unwrap_or(0);
+                                    let bytes =
+                                        item.get("bytes").and_then(|v| v.as_i64()).unwrap_or(0);
+                                    let percentage = item
+                                        .get("percentage")
+                                        .and_then(|v| v.as_u64())
+                                        .unwrap_or(0)
+                                        as u8;
+                                    let speed =
+                                        item.get("speed").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                                    let eta =
+                                        item.get("eta").and_then(|v| v.as_f64()).unwrap_or(-1.0);
+                                    let op_key = if !src.is_empty() && !dst.is_empty() {
+                                        format!("{}|{}->{}", name, src, dst)
+                                    } else {
+                                        format!("{}|{}", name, "transferring")
+                                    };
+                                    transferring.push(crate::event::FileTransferInfo {
+                                        name,
+                                        src,
+                                        dst,
+                                        size,
+                                        bytes,
+                                        percentage,
+                                        speed,
+                                        eta,
+                                        status: "Transferring".to_string(),
+                                        op_key,
+                                    });
+                                }
+                            }
+
+                            // 2. Parse active checking (core/stats returns this as an array of strings)
+                            if let Some(arr) = stats_json.get("checking").and_then(|v| v.as_array())
+                            {
+                                for item in arr {
+                                    if let Some(name) = item.as_str() {
+                                        transferring.push(crate::event::FileTransferInfo {
+                                            name: name.to_string(),
+                                            src: "".to_string(),
+                                            dst: "".to_string(),
+                                            size: 0,
+                                            bytes: 0,
+                                            percentage: 0,
+                                            speed: 0.0,
+                                            eta: 0.0,
+                                            status: "Checking".to_string(),
+                                            op_key: format!("{}|{}", name, "checking"),
+                                        });
+                                    }
+                                }
+                            }
+
+                            let mut transferred_map: HashMap<
+                                String,
+                                crate::event::FileTransferInfo,
+                            > = HashMap::new();
+                            let transferred_resp = client
+                                .post(format!("{}/core/transferred", rc_url))
+                                .json(&serde_json::json!({ "group": key.to_string() }))
+                                .send()
+                                .await;
+
+                            if let Ok(resp) = transferred_resp {
+                                if resp.status().is_success() {
+                                    if let Ok(t_json) = resp.json::<serde_json::Value>().await {
+                                        if let Some(arr) =
+                                            t_json.get("transferred").and_then(|v| v.as_array())
+                                        {
+                                            for item in arr {
+                                                let name = item
+                                                    .get("name")
+                                                    .and_then(|v| v.as_str())
+                                                    .unwrap_or("")
+                                                    .to_string();
+                                                let size = item
+                                                    .get("size")
+                                                    .and_then(|v| v.as_i64())
+                                                    .unwrap_or(0);
+                                                let bytes = item
+                                                    .get("bytes")
+                                                    .and_then(|v| v.as_i64())
+                                                    .unwrap_or(0);
+                                                let error = item
+                                                    .get("error")
+                                                    .and_then(|v| v.as_str())
+                                                    .unwrap_or("")
+                                                    .to_string();
+                                                let src = item
+                                                    .get("srcFs")
+                                                    .and_then(|v| v.as_str())
+                                                    .unwrap_or("")
+                                                    .to_string();
+                                                let dst = item
+                                                    .get("dstFs")
+                                                    .and_then(|v| v.as_str())
+                                                    .unwrap_or("")
+                                                    .to_string();
+                                                let checked = item
+                                                    .get("checked")
+                                                    .and_then(|v| v.as_bool())
+                                                    .unwrap_or(false);
+                                                let what = item
+                                                    .get("what")
+                                                    .and_then(|v| v.as_str())
+                                                    .unwrap_or("transferring");
+                                                let op_key = if !src.is_empty() && !dst.is_empty() {
+                                                    format!("{}|{}->{}", name, src, dst)
+                                                } else {
+                                                    format!("{}|{}", name, what)
+                                                };
+
+                                                let status = if !error.is_empty() {
+                                                    "Error".to_string()
+                                                } else if checked {
+                                                    "Checked".to_string()
+                                                } else {
+                                                    match what {
+                                                        "transferring" => "Transferred",
+                                                        "deleting" => "Deleted",
+                                                        "checking" => "Checked",
+                                                        "importing" => "Imported",
+                                                        "hashing" => "Hashed",
+                                                        "merging" => "Merged",
+                                                        "listing" => "Listed",
+                                                        "moving" => "Moved",
+                                                        "renaming" => "Renamed",
+                                                        _ => "Other",
+                                                    }
+                                                    .to_string()
+                                                };
+
+                                                let new_info = FileTransferInfo {
+                                                    name: name.clone(),
+                                                    src: src.clone(),
+                                                    dst: dst.clone(),
+                                                    size,
+                                                    bytes,
+                                                    percentage: 100,
+                                                    speed: 0.0,
+                                                    eta: 0.0,
+                                                    status,
+                                                    op_key: op_key.clone(),
+                                                };
+
+                                                // Create a unique key for the operation: filename + direction
+                                                // If src/dst are present (actual transfer), use them. Otherwise, use the 'what' field (e.g., "listing file - Path1")
+                                                let op_key = if !src.is_empty() && !dst.is_empty() {
+                                                    format!("{}|{}->{}", name, src, dst)
+                                                } else {
+                                                    format!("{}|{}", name, what)
+                                                };
+
+                                                // Deduplicate: Keep the "best" state for this specific operation
+                                                let is_better = if let Some(existing) =
+                                                    transferred_map.get(&op_key)
+                                                {
+                                                    (!checked && existing.status == "Checked")
+                                                        || (bytes > existing.bytes)
+                                                } else {
+                                                    true
+                                                };
+
+                                                if is_better {
+                                                    transferred_map.insert(op_key, new_info);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            let transferred: Vec<_> = transferred_map.into_values().collect();
+
+                            if let Some(tx) = sender {
+                                let _ =
+                                    tx.send(Event::FileProgress(crate::event::FileProgressState {
+                                        key,
+                                        transferring,
+                                        transferred,
+                                    }));
+                            }
+
                             if percent != last_percent {
                                 last_percent = percent;
                                 if let Some(tx) = sender {
