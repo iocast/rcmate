@@ -396,9 +396,20 @@ impl App {
     }
 
     pub fn sync_selected(&self) {
+        if let Ok(sp_lock) = self.sync_pairs.try_read() {
+            for pair_arc in sp_lock.iter() {
+                if let Ok(mut pair) = pair_arc.try_write() {
+                    if pair.selected {
+                        pair.status = SyncStatus::Queued;
+                    }
+                }
+            }
+        }
+
         let sync_pairs = self.sync_pairs.clone();
         let rclone = self.rclone.clone();
         let sender = self.events.sender();
+
         tokio::spawn(async move {
             let (targets, rclone_config) = {
                 let sp_lock = sync_pairs.read().await;
@@ -410,6 +421,7 @@ impl App {
                     .collect();
                 (targets, rc_lock.clone())
             };
+
             for chunk in targets.chunks(3) {
                 let mut set = tokio::task::JoinSet::new();
                 for pair_arc in chunk {
