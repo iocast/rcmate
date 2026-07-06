@@ -4,9 +4,10 @@ use ratatui::style::Style;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SyncStatus {
     Idle,
+    Queued,
     Syncing,
     Done,
     Error,
@@ -16,6 +17,7 @@ impl fmt::Display for SyncStatus {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::Idle => write!(f, "Idle"),
+            SyncStatus::Queued => write!(f, "Queued"),
             Self::Syncing => write!(f, "Syncing"),
             Self::Done => write!(f, "Done"),
             Self::Error => write!(f, "Error"),
