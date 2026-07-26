@@ -1,9 +1,10 @@
 use crate::app::App;
+use crate::event::FileEntry;
 use crate::views::ViewAction;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     buffer::Buffer,
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Constraint, Direction as LayoutDirection, Layout, Rect},
     style::{Color, Modifier, Style},
     widgets::{Block, Borders, Cell, Clear, Row, Table, Widget},
 };
@@ -130,14 +131,19 @@ impl ProgressView {
         Clear.render(popup_area, buf);
 
         let fp = app.file_progress.try_read().unwrap();
-        let (active, completed, _) = fp
+        let files: Vec<FileEntry> = fp
             .get(&self.key)
-            .cloned()
-            .unwrap_or_else(|| (Vec::new(), Vec::new(), std::collections::HashSet::new()));
+            .map(|m| m.values().cloned().collect())
+            .unwrap_or_default();
 
+        // "Sides" replaces the old raw "Direction" (srcFs -> dstFs) column: for
+        // bisync files it shows a ✓/…/✗/○ icon per direction (→ then ←) so you
+        // can see e.g. "✓→ …←" (forward already checked, reverse in progress).
+        // One-way syncs leave it blank since there's only one direction anyway.
         let header_row = Row::new(vec![
             Cell::from("File"),
-            Cell::from("Direction / Status"),
+            Cell::from("Sides"),
+            Cell::from("Status"),
             Cell::from("Progress"),
             Cell::from("Speed"),
             Cell::from("ETA"),
@@ -148,22 +154,20 @@ impl ProgressView {
                 .fg(Color::Cyan),
         );
 
-        let mut all_files = Vec::new();
-        all_files.extend(active);
-        all_files.extend(completed);
-
-        let filtered_files: Vec<_> = all_files
+        let filtered_files: Vec<_> = files
             .into_iter()
             .filter(|f| {
+                let status = f.combined_status();
                 let matches_status = match &self.active_filter {
-                    Some(filter) => &f.status == filter,
+                    // Match on the status word itself, ignoring the arrow suffix
+                    // used for an in-progress direction (e.g. "Checking →").
+                    Some(filter) => status.split(' ').next() == Some(filter.as_str()),
                     None => true,
                 };
 
                 let matches_search = if self.search_query.is_empty() {
                     true
                 } else {
-                    // If user didn't type wildcards, implicitly wrap in *query* for substring search
                     let query =
                         if self.search_query.contains('*') || self.search_query.contains('?') {
                             self.search_query.clone()
@@ -178,29 +182,42 @@ impl ProgressView {
             .collect();
 
         let mut data_rows = Vec::new();
-        for t in filtered_files {
-            let direction = if !t.src.is_empty() && !t.dst.is_empty() {
-                format!("{} -> {}", t.src, t.dst)
-            } else {
-                t.status.clone()
-            };
+        for f in filtered_files {
+            let status = f.combined_status();
+            let sides = f.direction_icons();
 
-            let progress =
-                if t.status == "Checking" || t.status == "Checked" || t.status == "Deleted" {
-                    "-".to_string()
+            // Show progress/speed/eta from whichever direction is currently
+            // doing something; once both sides are settled, show whichever
+            // moved more bytes.
+            let active_slot =
+                if f.forward.status == "Transferring" || f.forward.status == "Checking" {
+                    &f.forward
+                } else if f.reverse.status == "Transferring" || f.reverse.status == "Checking" {
+                    &f.reverse
+                } else if f.reverse.bytes > f.forward.bytes {
+                    &f.reverse
                 } else {
-                    format!("{}%", t.percentage)
+                    &f.forward
                 };
 
-            let speed = if t.speed > 0.0 {
-                format!("{}/s", human_readable_bytes(t.speed as i64))
+            let progress = if status.starts_with("Checking")
+                || status.starts_with("Checked")
+                || status.starts_with("Deleted")
+            {
+                "-".to_string()
+            } else {
+                format!("{}%", active_slot.percentage)
+            };
+
+            let speed = if active_slot.speed > 0.0 {
+                format!("{}/s", human_readable_bytes(active_slot.speed as i64))
             } else {
                 "-".to_string()
             };
 
-            let eta = format_eta(t.eta);
+            let eta = format_eta(active_slot.eta);
 
-            let status_style = match t.status.as_str() {
+            let status_style = match status.split(' ').next().unwrap_or("") {
                 "Transferring" | "Transferred" | "Moved" => Style::default().fg(Color::Green),
                 "Checking" | "Checked" => Style::default().fg(Color::Blue),
                 "Deleted" => Style::default().fg(Color::Red),
@@ -210,8 +227,9 @@ impl ProgressView {
 
             data_rows.push(
                 Row::new(vec![
-                    Cell::from(t.name.clone()),
-                    Cell::from(direction),
+                    Cell::from(f.name.clone()),
+                    Cell::from(sides),
+                    Cell::from(status),
                     Cell::from(progress),
                     Cell::from(speed),
                     Cell::from(eta),
@@ -236,14 +254,16 @@ impl ProgressView {
         let mut all_rows = vec![header_row];
         all_rows.extend(visible_data_rows);
 
+        // 4. Updated Constraints for 6 columns
         let table = Table::new(
             all_rows,
             &[
-                Constraint::Min(30),
-                Constraint::Min(25),
-                Constraint::Length(10),
-                Constraint::Length(15),
-                Constraint::Length(10),
+                Constraint::Min(30),    // File
+                Constraint::Length(12), // Sides
+                Constraint::Length(14), // Status
+                Constraint::Length(10), // Progress
+                Constraint::Length(15), // Speed
+                Constraint::Length(10), // ETA
             ],
         )
         .block(
@@ -296,7 +316,7 @@ fn wildcard_match(pattern: &str, text: &str) -> bool {
 
 fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
     let popup_layout = Layout::default()
-        .direction(Direction::Vertical)
+        .direction(LayoutDirection::Vertical)
         .constraints([
             Constraint::Percentage((100 - percent_y) / 2),
             Constraint::Percentage(percent_y),
@@ -305,7 +325,7 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
         .split(r);
 
     Layout::default()
-        .direction(Direction::Horizontal)
+        .direction(LayoutDirection::Horizontal)
         .constraints([
             Constraint::Percentage((100 - percent_x) / 2),
             Constraint::Percentage(percent_x),

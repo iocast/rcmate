@@ -3,8 +3,8 @@ use crate::config::{
     SyncType,
 };
 use crate::event::{
-    AppEvent, ErrorState, Event, EventHandler, FileTransferInfo, FinishedState, HasKey,
-    ProgressState, TransferState,
+    AppEvent, Direction, ErrorState, Event, EventHandler, FileEntry, FileProgressState,
+    FileTransferInfo, FinishedState, HasKey, ProgressState, TransferState,
 };
 use crate::rclone_request::Builder;
 use crate::tui::{ActionHandler, View};
@@ -13,7 +13,7 @@ use color_eyre::{Result, eyre::Context, eyre::eyre};
 use ratatui::DefaultTerminal;
 use reqwest;
 use serde_json;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -23,7 +23,7 @@ use std::{
 use tokio::process::Command;
 use tokio::sync::{RwLock, mpsc};
 use tokio::task::JoinSet;
-use tracing::{debug, error, info};
+use tracing::{error, info};
 use uuid::Uuid;
 
 pub fn expand_tilde(path: PathBuf) -> PathBuf {
@@ -48,18 +48,9 @@ pub struct App {
     rcd_child: Option<tokio::process::Child>,
     pub(crate) config_path: PathBuf,
     pub(crate) rclone_version: Arc<RwLock<String>>,
-    pub file_progress: Arc<
-        RwLock<
-            HashMap<
-                Uuid,
-                (
-                    Vec<crate::event::FileTransferInfo>,
-                    Vec<crate::event::FileTransferInfo>,
-                    HashSet<String>,
-                ),
-            >,
-        >,
-    >,
+    /// Per sync pair, the merged per-file progress (one row per filename, with
+    /// forward/reverse direction tracked inside `FileEntry` for bisync).
+    pub file_progress: Arc<RwLock<HashMap<Uuid, HashMap<String, FileEntry>>>>,
 }
 
 impl Default for App {
@@ -222,29 +213,26 @@ impl App {
                 Event::Progress(state) => self.handle_progress(state).await,
                 Event::FileProgress(state) => {
                     let mut fp = self.file_progress.write().await;
-                    let entry = fp
-                        .entry(state.key)
-                        .or_insert_with(|| (Vec::new(), Vec::new(), HashSet::new()));
+                    let files = fp.entry(state.key).or_insert_with(HashMap::new);
 
-                    // 1. Overwrite active transfers
-                    entry.0 = state.transferring;
-
-                    // 2. Accumulate completed transfers using op_key
-                    for t in state.transferred {
-                        if entry.2.contains(&t.op_key) {
-                            // This exact operation already exists, update if bytes increased
-                            if let Some(existing) =
-                                entry.1.iter_mut().find(|x| x.op_key == t.op_key)
-                            {
-                                if t.bytes > existing.bytes {
-                                    *existing = t;
-                                }
-                            }
-                        } else {
-                            // New operation, add it as a separate row
-                            entry.2.insert(t.op_key.clone());
-                            entry.1.push(t);
-                        }
+                    // Merge both the in-progress and finished reports into one
+                    // row per filename. FileEntry::apply keeps the forward and
+                    // reverse directions separate internally, so a bisync file
+                    // that's "Checked ->" and currently "Checking <-" doesn't
+                    // clobber itself, and settles to a single combined status
+                    // once both directions land.
+                    for t in state.transferring.iter().chain(state.transferred.iter()) {
+                        let entry = files.entry(t.name.clone()).or_insert_with(|| FileEntry {
+                            name: t.name.clone(),
+                            ..Default::default()
+                        });
+                        // `bidirectional` reflects the sync pair's operation
+                        // type, not just whichever direction happened to
+                        // report data - a file that only ever needed copying
+                        // one way is still part of a two-way operation, and
+                        // should keep showing that in the TUI.
+                        entry.bidirectional = entry.bidirectional || state.bidirectional;
+                        entry.apply(t);
                     }
                 }
             }
@@ -260,7 +248,7 @@ impl App {
         if let Some(mut popup) = self.popup.take() {
             let action = popup.handle_key_event(key_event, self);
             match action {
-                ViewAction::ClosePopup | ViewAction::SwitchTo(_) => {} // popup remains None
+                ViewAction::ClosePopup | ViewAction::SwitchTo(_) => {}
                 _ => self.popup = Some(popup),
             }
         } else {
@@ -396,6 +384,7 @@ impl App {
     }
 
     pub fn sync_selected(&self) {
+        // Immediately update selected pairs to Queued
         if let Ok(sp_lock) = self.sync_pairs.try_read() {
             for pair_arc in sp_lock.iter() {
                 if let Ok(mut pair) = pair_arc.try_write() {
@@ -445,7 +434,6 @@ impl App {
     pub fn save_config(&self) -> color_eyre::Result<()> {
         let mut general = (*self.general.try_read().unwrap()).clone();
 
-        // If the current path points to an existing file, extract its parent directory.
         if let Some(ref log_path) = general.log_path {
             if log_path.is_file() {
                 general.log_path = log_path.parent().map(|p| p.to_path_buf());
@@ -496,20 +484,75 @@ impl SyncPairConfig {
         rclone: &RcloneConfig,
         sender: Option<mpsc::UnboundedSender<Event>>,
     ) -> Result<()> {
+        /// Best-effort classification of which way a file moved.
+        ///
+        /// The rclone rc API (https://rclone.org/rc/, `core/stats` and
+        /// `core/transferred`) doesn't label bisync operations with an explicit
+        /// "direction" field. When an item carries real `srcFs`/`dstFs` values
+        /// we compare them against the sync pair's configured source/destination
+        /// (`path1`/`path2`) directly. For listing-only entries (no srcFs/dstFs,
+        /// e.g. bisync's "listing file - Path1"/"listing file - Path2" phase)
+        /// we fall back to the `what` string, which does mention the side.
+        fn classify_direction(
+            src: &str,
+            dst: &str,
+            what: &str,
+            path1: &str,
+            path2: &str,
+        ) -> Direction {
+            // rclone's rc API echoes fs strings back in whatever form the
+            // backend prefers - notably the local backend on Windows resolves
+            // paths to their extended-length form (a "\\?\" or "//?/" verbatim
+            // prefix, confirmed from logs: srcFs "//?/C:/Users/2107/GoogleDrive"
+            // vs the plain "C:/Users/2107/GoogleDrive" from the TOML config),
+            // uses backslashes, and is case-insensitive - while path1/path2 are
+            // taken as-is from the config. Comparing raw strings meant src ==
+            // path2 (and dst == path1) essentially never matched, so every
+            // genuine Reverse transfer silently fell through to the Forward
+            // default below. Strip the verbatim prefix, normalize separators,
+            // trailing separators, and case before comparing.
+            fn norm(s: &str) -> String {
+                let s = s.strip_prefix(r"\\?\").unwrap_or(s);
+                let s = s.strip_prefix("//?/").unwrap_or(s);
+                s.replace('\\', "/").trim_end_matches('/').to_lowercase()
+            }
+            if !src.is_empty() && !dst.is_empty() {
+                let (n_src, n_dst, n_path1, n_path2) =
+                    (norm(src), norm(dst), norm(path1), norm(path2));
+                if n_src == n_path2 && n_dst == n_path1 {
+                    return Direction::Reverse;
+                }
+                if n_src == n_path1 && n_dst == n_path2 {
+                    return Direction::Forward;
+                }
+            }
+            if what.contains("Path2") {
+                return Direction::Reverse;
+            }
+            Direction::Forward
+        }
+
         async fn execute_and_poll_job(
             client: &reqwest::Client,
             rc_url: &str,
             endpoint: &str,
             params: serde_json::Value,
             key: Uuid,
+            // The rc `_group` this specific job was tagged with. Must match
+            // exactly what's in `params["_group"]` - stats/transferred are
+            // filtered by group, so a mismatch means this job's progress
+            // (and thus its direction) silently never shows up.
+            group: &str,
+            path1: &str,
+            path2: &str,
+            // Whether this sync pair's operation is inherently two-way
+            // (bisync, or the file-mode two-copy pseudo-bisync). Drives
+            // whether the TUI always shows a direction indicator for this
+            // file, even if only one direction ends up doing anything.
+            bidirectional: bool,
             sender: &Option<mpsc::UnboundedSender<Event>>,
             send_finished: bool,
         ) -> Result<()> {
-            debug!(
-                "Executing job: endpoint={}, params={}",
-                endpoint,
-                serde_json::to_string_pretty(&params).unwrap_or_default()
-            );
             let resp = client
                 .post(endpoint)
                 .json(&params)
@@ -528,15 +571,11 @@ impl SyncPairConfig {
             }
             let rc_resp: serde_json::Value =
                 resp.json().await.context("Failed to parse rc response")?;
-            debug!(
-                "Job start response: {}",
-                serde_json::to_string_pretty(&rc_resp).unwrap_or_default()
-            );
             let job_id = rc_resp
                 .get("jobid")
                 .and_then(|v| v.as_u64())
                 .ok_or_else(|| eyre!("No jobid in rclone rc response"))?;
-            debug!("Started rclone job {} via rc", job_id);
+
             let poll_interval = std::time::Duration::from_millis(100);
             let mut last_percent = 0u16;
             let mut consecutive_failures = 0;
@@ -554,7 +593,6 @@ impl SyncPairConfig {
                 if let Ok(resp) = status_resp {
                     if resp.status().is_success() {
                         if let Ok(status_json) = resp.json::<serde_json::Value>().await {
-                            debug!("{}", status_json);
                             finished = status_json
                                 .get("finished")
                                 .and_then(|v| v.as_bool())
@@ -615,13 +653,12 @@ impl SyncPairConfig {
                 }
                 let stats_resp = client
                     .post(format!("{}/core/stats", rc_url))
-                    .json(&serde_json::json!({ "group": key.to_string() }))
+                    .json(&serde_json::json!({ "group": group }))
                     .send()
                     .await;
                 if let Ok(resp) = stats_resp {
                     if resp.status().is_success() {
                         if let Ok(stats_json) = resp.json::<serde_json::Value>().await {
-                            debug!("Job {} core/stats response: {}", job_id, stats_json);
                             let bytes = stats_json
                                 .get("bytes")
                                 .and_then(|v| v.as_i64())
@@ -637,14 +674,14 @@ impl SyncPairConfig {
                             }
                             .clamp(0, 100);
 
-                            // --- NEW CODE: Extract per-file progress ---
                             let mut transferring = Vec::new();
 
-                            // 1. Parse active transferring
                             if let Some(arr) =
                                 stats_json.get("transferring").and_then(|v| v.as_array())
                             {
                                 for item in arr {
+                                    info!("transferring || {:?}", item);
+
                                     let name = item
                                         .get("name")
                                         .and_then(|v| v.as_str())
@@ -673,12 +710,11 @@ impl SyncPairConfig {
                                         item.get("speed").and_then(|v| v.as_f64()).unwrap_or(0.0);
                                     let eta =
                                         item.get("eta").and_then(|v| v.as_f64()).unwrap_or(-1.0);
-                                    let op_key = if !src.is_empty() && !dst.is_empty() {
-                                        format!("{}|{}->{}", name, src, dst)
-                                    } else {
-                                        format!("{}|{}", name, "transferring")
-                                    };
-                                    transferring.push(crate::event::FileTransferInfo {
+
+                                    let direction =
+                                        classify_direction(&src, &dst, "", path1, path2);
+
+                                    transferring.push(FileTransferInfo {
                                         name,
                                         src,
                                         dst,
@@ -688,17 +724,21 @@ impl SyncPairConfig {
                                         speed,
                                         eta,
                                         status: "Transferring".to_string(),
-                                        op_key,
+                                        direction,
                                     });
                                 }
                             }
 
-                            // 2. Parse active checking (core/stats returns this as an array of strings)
                             if let Some(arr) = stats_json.get("checking").and_then(|v| v.as_array())
                             {
                                 for item in arr {
                                     if let Some(name) = item.as_str() {
-                                        transferring.push(crate::event::FileTransferInfo {
+                                        // The bare "checking" list has no srcFs/dstFs, so we
+                                        // can't tell which side it belongs to here; it's a
+                                        // transient state anyway and gets replaced by a
+                                        // direction-aware entry once core/transferred reports
+                                        // "Checked" for this file.
+                                        transferring.push(FileTransferInfo {
                                             name: name.to_string(),
                                             src: "".to_string(),
                                             dst: "".to_string(),
@@ -708,19 +748,23 @@ impl SyncPairConfig {
                                             speed: 0.0,
                                             eta: 0.0,
                                             status: "Checking".to_string(),
-                                            op_key: format!("{}|{}", name, "checking"),
+                                            direction: Direction::Forward,
                                         });
                                     }
                                 }
                             }
 
+                            // Dedup within this single poll response. Keyed by
+                            // (name, direction) rather than just name, since a
+                            // bisync file legitimately appears once per direction
+                            // and both reports need to survive.
                             let mut transferred_map: HashMap<
-                                String,
-                                crate::event::FileTransferInfo,
+                                (String, Direction),
+                                FileTransferInfo,
                             > = HashMap::new();
                             let transferred_resp = client
                                 .post(format!("{}/core/transferred", rc_url))
-                                .json(&serde_json::json!({ "group": key.to_string() }))
+                                .json(&serde_json::json!({ "group": group }))
                                 .send()
                                 .await;
 
@@ -731,6 +775,8 @@ impl SyncPairConfig {
                                             t_json.get("transferred").and_then(|v| v.as_array())
                                         {
                                             for item in arr {
+                                                info!("transferred || {:?}", item);
+
                                                 let name = item
                                                     .get("name")
                                                     .and_then(|v| v.as_str())
@@ -767,19 +813,21 @@ impl SyncPairConfig {
                                                     .get("what")
                                                     .and_then(|v| v.as_str())
                                                     .unwrap_or("transferring");
-                                                let op_key = if !src.is_empty() && !dst.is_empty() {
-                                                    format!("{}|{}->{}", name, src, dst)
-                                                } else {
-                                                    format!("{}|{}", name, what)
-                                                };
+
+                                                let direction = classify_direction(
+                                                    &src, &dst, what, path1, path2,
+                                                );
 
                                                 let status = if !error.is_empty() {
                                                     "Error".to_string()
-                                                } else if checked {
+                                                } else if checked && bytes == 0 {
                                                     "Checked".to_string()
                                                 } else {
                                                     match what {
-                                                        "transferring" => "Transferred",
+                                                        "transferring" | "copying"
+                                                        | "uploading" | "downloading" => {
+                                                            "Transferred"
+                                                        }
                                                         "deleting" => "Deleted",
                                                         "checking" => "Checked",
                                                         "importing" => "Imported",
@@ -793,39 +841,29 @@ impl SyncPairConfig {
                                                     .to_string()
                                                 };
 
-                                                let new_info = FileTransferInfo {
-                                                    name: name.clone(),
-                                                    src: src.clone(),
-                                                    dst: dst.clone(),
-                                                    size,
-                                                    bytes,
-                                                    percentage: 100,
-                                                    speed: 0.0,
-                                                    eta: 0.0,
-                                                    status,
-                                                    op_key: op_key.clone(),
-                                                };
-
-                                                // Create a unique key for the operation: filename + direction
-                                                // If src/dst are present (actual transfer), use them. Otherwise, use the 'what' field (e.g., "listing file - Path1")
-                                                let op_key = if !src.is_empty() && !dst.is_empty() {
-                                                    format!("{}|{}->{}", name, src, dst)
-                                                } else {
-                                                    format!("{}|{}", name, what)
-                                                };
-
-                                                // Deduplicate: Keep the "best" state for this specific operation
+                                                let map_key = (name.clone(), direction);
                                                 let is_better = if let Some(existing) =
-                                                    transferred_map.get(&op_key)
+                                                    transferred_map.get(&map_key)
                                                 {
-                                                    (!checked && existing.status == "Checked")
-                                                        || (bytes > existing.bytes)
+                                                    bytes > existing.bytes
                                                 } else {
                                                     true
                                                 };
 
                                                 if is_better {
-                                                    transferred_map.insert(op_key, new_info);
+                                                    let new_info = FileTransferInfo {
+                                                        name: name.clone(),
+                                                        src: src.clone(),
+                                                        dst: dst.clone(),
+                                                        size,
+                                                        bytes,
+                                                        percentage: 100,
+                                                        speed: 0.0,
+                                                        eta: 0.0,
+                                                        status,
+                                                        direction,
+                                                    };
+                                                    transferred_map.insert(map_key, new_info);
                                                 }
                                             }
                                         }
@@ -836,12 +874,12 @@ impl SyncPairConfig {
                             let transferred: Vec<_> = transferred_map.into_values().collect();
 
                             if let Some(tx) = sender {
-                                let _ =
-                                    tx.send(Event::FileProgress(crate::event::FileProgressState {
-                                        key,
-                                        transferring,
-                                        transferred,
-                                    }));
+                                let _ = tx.send(Event::FileProgress(FileProgressState {
+                                    key,
+                                    bidirectional,
+                                    transferring,
+                                    transferred,
+                                }));
                             }
 
                             if percent != last_percent {
@@ -948,11 +986,22 @@ impl SyncPairConfig {
         let src_str = source.to_string_lossy().into_owned();
         let dst_str = destination.to_string_lossy().into_owned();
 
-        // Check if we need to override Sync to Copy for single files
+        // Canonical path1/path2 for direction classification. Forward always
+        // means source -> destination, Reverse always means destination ->
+        // source, regardless of which job (bisync's single job, or the
+        // file-mode pseudo-bisync's two copy jobs) reports it.
+        let path1 = src_str.clone();
+        let path2 = dst_str.clone();
+
         let is_sync_file = sync_pair.sync_type == SyncType::Sync && is_file;
 
+        // Whether this sync pair's operation can move a file in either
+        // direction: real bisync, or rcmate's file-mode "sync" which runs two
+        // opposite `copy --update` jobs. Everything else (plain copy/move,
+        // directory sync) only ever moves data one way.
+        let is_two_way = sync_pair.sync_type == SyncType::BiSync || is_sync_file;
+
         let requests: Vec<(String, serde_json::Value)> = if is_sync_file {
-            // Job 1: Copy source -> destination with --update
             let req1 = crate::rclone_request::CopyBuilder::new(src_str.clone(), dst_str.clone())
                 .exclude(sync_pair.excludes.clone().unwrap_or_default())
                 .include(includes.clone())
@@ -962,7 +1011,6 @@ impl SyncPairConfig {
                 obj.insert("update".to_string(), serde_json::Value::Bool(true));
             }
 
-            // Job 2: Copy destination -> source with --update
             let req2 = crate::rclone_request::CopyBuilder::new(dst_str, src_str)
                 .exclude(sync_pair.excludes.clone().unwrap_or_default())
                 .include(includes)
@@ -1024,8 +1072,13 @@ impl SyncPairConfig {
             vec![(endpoint, request_val)]
         };
 
-        // Execute the job(s) sequentially
         for (i, (endpoint, mut json_val)) in requests.into_iter().enumerate() {
+            let group_name = if i == 0 {
+                key.to_string()
+            } else {
+                format!("{}-{}", key, i + 1)
+            };
+
             if let Some(obj) = json_val.as_object_mut() {
                 if let Some(filter) = &sync_pair.filter {
                     obj.insert(
@@ -1042,23 +1095,25 @@ impl SyncPairConfig {
                     }
                 }
                 obj.insert("_async".to_string(), serde_json::Value::Bool(true));
-
-                // Use a distinct group for the second job to prevent rclone stats accumulation
-                let group_name = if i == 0 {
-                    key.to_string()
-                } else {
-                    format!("{}-{}", key, i + 1)
-                };
-                obj.insert("_group".to_string(), serde_json::Value::String(group_name));
+                obj.insert(
+                    "_group".to_string(),
+                    serde_json::Value::String(group_name.clone()),
+                );
             }
-
-            debug!(
-                "rclone rc {} call: src={}, dst={}",
-                sync_pair.sync_type,
-                source.display(),
-                destination.display()
-            );
-            execute_and_poll_job(&client, rc_url, &endpoint, json_val, key, &sender, true).await?;
+            execute_and_poll_job(
+                &client,
+                rc_url,
+                &endpoint,
+                json_val,
+                key,
+                &group_name,
+                &path1,
+                &path2,
+                is_two_way,
+                &sender,
+                true,
+            )
+            .await?;
         }
         Ok(())
     }
