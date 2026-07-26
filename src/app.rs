@@ -384,10 +384,7 @@ impl App {
     }
 
     pub fn sync_selected(&self) {
-<<<<<<< HEAD
         // Immediately update selected pairs to Queued
-=======
->>>>>>> e2210fc89f12c32bd60a2dbdb74871874b7bb2ae
         if let Ok(sp_lock) = self.sync_pairs.try_read() {
             for pair_arc in sp_lock.iter() {
                 if let Ok(mut pair) = pair_arc.try_write() {
