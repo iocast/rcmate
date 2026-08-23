@@ -17,7 +17,12 @@ pub struct MainView;
 
 impl MainView {
     pub fn help_text(&self) -> String {
-        "q: quit | ↑/↓: Up/Down | SPACE: select | a: all | CTRL+s: run | p: progress | o: options | ALT+e: error | e: edit | CTRL+a: add | DEL: delete | ALT+SHIFT+I: info".to_string()
+        [
+            "q: quit | ↑/↓: navigate | SPACE: select | a: select all",
+            "CTRL+s: run | p: progress | o: options | S: settings",
+            "CTRL+a: add | e: edit | DEL: delete | ALT+e: error | ALT+SHIFT+I: info",
+        ]
+        .join("\n")
     }
 
     /// Builds the confirmation popup for DEL. A bisync pair always gets a
@@ -155,6 +160,11 @@ impl MainView {
                         )))
                     }
                 }
+            }
+            KeyCode::Char('S') if key_event.modifiers != KeyModifiers::CONTROL => {
+                ViewAction::SwitchTo(View::SettingsForm(
+                    crate::views::settings_form::SettingsFormView::new(app),
+                ))
             }
             KeyCode::Char('s' | 'S') if key_event.modifiers == KeyModifiers::CONTROL => {
                 let sync_pairs = app.sync_pairs.try_read().unwrap();
