@@ -83,11 +83,68 @@ pub struct SyncPairUi {
     pub sync_pair: SyncPairConfig,
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct BisyncOptions {
+fn default_resync_mode() -> String {
+    "none".to_string()
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
+/// Per sync pair rclone options.
+///
+/// Which fields actually apply depends on the pair's [`SyncType`], and on
+/// whether its paths point at a single file. The Options view only offers the
+/// applicable ones (see `views::options::fields_for`) and the request building
+/// only sends those.
+///
+/// Options that a *type* doesn't use are still stored, so switching a pair's
+/// type back and forth doesn't lose what was configured before. Options that
+/// don't apply to a file-mode pair are a different matter: they're kept out of
+/// the config file entirely (see `App::save_config`), since a value in the
+/// file that the popup never shows and the run never uses is just misleading.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct SyncOptions {
+    /// `--dry-run`. Sent as bisync's dedicated `dryRun` parameter, and via
+    /// the generic `_config` blob (`{"DryRun": true}`) for the other
+    /// operations, which have no rc parameter of their own for it.
+    #[serde(default)]
+    pub dry_run: bool,
+    /// Doesn't apply to a pair that operates on a single file (see
+    /// `SyncPairConfig::is_file_mode`). Skipped when off so such a pair
+    /// carries no trace of it in the config file.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub create_empty_src_dirs: bool,
+    /// `move` only.
+    #[serde(default)]
+    pub delete_empty_src_dirs: bool,
+    /// `bisync` only.
+    #[serde(default)]
     pub resync: bool,
-    pub force: bool,
+    /// `bisync` only; one of `none`, `path1`, `path2`, `newer`, `older`,
+    /// `larger`, `smaller`. `none` means "don't send resyncMode at all".
+    #[serde(default = "default_resync_mode")]
     pub resync_mode: String,
+    /// `bisync` only.
+    #[serde(default)]
+    pub force: bool,
+    /// `bisync` only.
+    #[serde(default)]
+    pub check_access: bool,
+}
+
+impl Default for SyncOptions {
+    fn default() -> Self {
+        Self {
+            dry_run: false,
+            create_empty_src_dirs: false,
+            delete_empty_src_dirs: false,
+            resync: false,
+            resync_mode: default_resync_mode(),
+            force: false,
+            check_access: false,
+        }
+    }
 }
 
 /// SyncPairConfig is the configuration for a single sync pair
@@ -106,8 +163,10 @@ pub struct SyncPairConfig {
     #[serde(default)]
     pub filter: Option<String>,
 
-    #[serde(skip)]
-    pub bisync_opts: BisyncOptions,
+    /// Kept last so it serializes after the scalar fields - TOML requires a
+    /// nested table to come after the plain keys of its parent.
+    #[serde(default)]
+    pub options: SyncOptions,
 }
 
 // Default value function for Serde
@@ -153,5 +212,90 @@ impl Default for Config {
             },
             sync_pairs: Vec::new(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Configs written before options were persisted have no `[..options]`
+    /// table; they must still load, with options falling back to defaults.
+    #[test]
+    fn sync_pair_without_options_gets_defaults() {
+        let toml_str = r#"
+[general]
+log_level = "info"
+
+[rclone]
+bin = "rclone"
+
+[[sync_pairs]]
+name = "docs"
+type = "bisync"
+source = "/src"
+destination = "/dst"
+"#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+        let opts = &config.sync_pairs[0].options;
+        assert_eq!(*opts, SyncOptions::default());
+        // "none" rather than an empty string, so the value is always one of
+        // the modes the Options view cycles through.
+        assert_eq!(opts.resync_mode, "none");
+    }
+
+    /// `options` is a nested table and TOML rejects plain keys after one, so
+    /// it has to stay the last field of `SyncPairConfig`.
+    #[test]
+    fn options_survive_a_toml_round_trip() {
+        let mut config = Config::default();
+        config.sync_pairs.push(SyncPairConfig {
+            name: "docs".to_string(),
+            sync_type: SyncType::BiSync,
+            source: "/src".to_string(),
+            destination: "/dst".to_string(),
+            excludes: Some(vec!["*.tmp".to_string()]),
+            includes: None,
+            filter: None,
+            options: SyncOptions {
+                dry_run: true,
+                resync: true,
+                resync_mode: "newer".to_string(),
+                ..SyncOptions::default()
+            },
+        });
+
+        let serialized = toml::to_string_pretty(&config).unwrap();
+        let parsed: Config = toml::from_str(&serialized).unwrap();
+        assert_eq!(parsed.sync_pairs[0].options, config.sync_pairs[0].options);
+    }
+
+    /// `create_empty_src_dirs` doesn't apply to a file-mode pair, and
+    /// `save_config` leaves it off for those - which only keeps it out of the
+    /// file if serialization skips the disabled flag.
+    #[test]
+    fn a_disabled_create_empty_src_dirs_is_not_written() {
+        let mut config = Config::default();
+        config.sync_pairs.push(SyncPairConfig {
+            name: "one file".to_string(),
+            sync_type: SyncType::Sync,
+            source: "/src/notes.txt".to_string(),
+            destination: "/dst".to_string(),
+            excludes: None,
+            includes: None,
+            filter: None,
+            options: SyncOptions {
+                dry_run: true,
+                create_empty_src_dirs: false,
+                ..SyncOptions::default()
+            },
+        });
+
+        let serialized = toml::to_string_pretty(&config).unwrap();
+        assert!(
+            !serialized.contains("create_empty_src_dirs"),
+            "{serialized}"
+        );
+        assert!(serialized.contains("dry_run"));
     }
 }

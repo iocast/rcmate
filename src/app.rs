@@ -6,7 +6,7 @@ use crate::event::{
     AppEvent, Direction, ErrorState, Event, EventHandler, FileEntry, FileProgressState,
     FileTransferInfo, FinishedState, HasKey, ProgressState, TransferState,
 };
-use crate::rclone_request::Builder;
+use crate::rclone_request::{Builder, Configurable};
 use crate::tui::{ActionHandler, View};
 use crate::views::ViewAction;
 use color_eyre::{Result, eyre::Context, eyre::eyre};
@@ -456,7 +456,17 @@ impl App {
             .try_read()
             .unwrap()
             .iter()
-            .map(|sp| sp.try_read().unwrap().sync_pair.clone())
+            .map(|sp| {
+                let mut pair = sp.try_read().unwrap().sync_pair.clone();
+                // Options that don't apply to a pair aren't written for it:
+                // a file-mode pair has no source directories to mirror, and
+                // an option in the file that the Options popup never shows
+                // would just be a lie about what the next run will do.
+                if pair.is_file_mode() {
+                    pair.options.create_empty_src_dirs = false;
+                }
+                pair
+            })
             .collect();
 
         let config = Config {
@@ -478,6 +488,24 @@ impl ActionHandler for App {
 }
 
 impl SyncPairConfig {
+    /// Whether this pair operates on a single file rather than a directory.
+    ///
+    /// Such a pair is run as an operation on the *parent* directories plus an
+    /// include filter for the file name (see `run_command`), so options that
+    /// only make sense for directory trees don't apply to it - see
+    /// `views::options::fields_for`, which hides them, and `save_config`,
+    /// which keeps them out of the config file.
+    ///
+    /// A path containing `:` is taken to be a remote, which can't be stat'ed
+    /// locally and is assumed to be a directory.
+    pub fn is_file_mode(&self) -> bool {
+        let source = expand_tilde(PathBuf::from(&self.source));
+        let destination = expand_tilde(PathBuf::from(&self.destination));
+        source.is_file()
+            || destination.is_file()
+            || (!source.to_string_lossy().contains(':') && !source.is_dir())
+    }
+
     pub async fn execute_sync(
         key: Uuid,
         sync_pair: SyncPairConfig,
@@ -935,9 +963,9 @@ impl SyncPairConfig {
         let mut includes = sync_pair.includes.clone().unwrap_or_default();
         let src_is_file = source.is_file();
         let dst_is_file = destination.is_file();
-        let is_file = src_is_file
-            || dst_is_file
-            || (!source.to_string_lossy().contains(':') && !source.is_dir());
+        // Same predicate the Options view and the config writer use, so what
+        // gets sent can't drift from what's offered and stored.
+        let is_file = sync_pair.is_file_mode();
 
         if is_file {
             let (src_dir, dst_dir, file_name) = if src_is_file {
@@ -1011,28 +1039,39 @@ impl SyncPairConfig {
         // directory sync) only ever moves data one way.
         let is_two_way = sync_pair.sync_type == SyncType::BiSync || is_sync_file;
 
+        // Per-entry options from the config. Only the ones that apply to this
+        // pair are sent - see `views::options::fields_for`, which offers the
+        // same set in the Options popup.
+        let opts = &sync_pair.options;
+
+        // A file-mode pair runs against the parent directories with an include
+        // filter for one file name, so there are no source directories to
+        // mirror. The Options popup hides this option for such a pair and
+        // `save_config` keeps it out of the config file, so it should be false
+        // here already; the guard makes the request independent of that.
+        let create_empty_src_dirs = !is_file && opts.create_empty_src_dirs;
+
         let requests: Vec<(String, serde_json::Value)> = if is_sync_file {
+            // Two opposite `copy --update` jobs standing in for bisync; both
+            // need --update so the older side never overwrites the newer one.
+            // `dry_run` is the only configurable option that applies.
             let req1 = crate::rclone_request::CopyBuilder::new(src_str.clone(), dst_str.clone())
                 .exclude(sync_pair.excludes.clone().unwrap_or_default())
                 .include(includes.clone())
+                .update_older(true)
+                .dry_run(opts.dry_run)
                 .build();
-            let mut json1 = serde_json::to_value(req1)?;
-            if let Some(obj) = json1.as_object_mut() {
-                obj.insert("update".to_string(), serde_json::Value::Bool(true));
-            }
 
             let req2 = crate::rclone_request::CopyBuilder::new(dst_str, src_str)
                 .exclude(sync_pair.excludes.clone().unwrap_or_default())
                 .include(includes)
+                .update_older(true)
+                .dry_run(opts.dry_run)
                 .build();
-            let mut json2 = serde_json::to_value(req2)?;
-            if let Some(obj) = json2.as_object_mut() {
-                obj.insert("update".to_string(), serde_json::Value::Bool(true));
-            }
 
             vec![
-                (format!("{}/sync/copy", rc_url), json1),
-                (format!("{}/sync/copy", rc_url), json2),
+                (format!("{}/sync/copy", rc_url), serde_json::to_value(req1)?),
+                (format!("{}/sync/copy", rc_url), serde_json::to_value(req2)?),
             ]
         } else {
             let (endpoint, request_val) = match sync_pair.sync_type {
@@ -1040,16 +1079,20 @@ impl SyncPairConfig {
                     let mut req = crate::rclone_request::BiSyncBuilder::new(src_str, dst_str)
                         .exclude(sync_pair.excludes.clone().unwrap_or_default())
                         .include(includes)
+                        // bisync has a dedicated dryRun parameter, unlike the
+                        // other operations which go through `_config`.
+                        .dry_run(opts.dry_run)
+                        .create_empty_src_dirs(create_empty_src_dirs)
+                        .check_access(opts.check_access)
                         .build();
 
-                    let bisync_opts = &sync_pair.bisync_opts;
-                    if bisync_opts.resync {
+                    if opts.resync {
                         req.resync = Some(true);
-                        if bisync_opts.resync_mode != "none" {
-                            req.resync_mode = Some(bisync_opts.resync_mode.clone());
+                        if opts.resync_mode != "none" {
+                            req.resync_mode = Some(opts.resync_mode.clone());
                         }
                     }
-                    if bisync_opts.force {
+                    if opts.force {
                         req.force = Some(true);
                     }
                     (
@@ -1061,6 +1104,8 @@ impl SyncPairConfig {
                     let req = crate::rclone_request::SyncBuilder::new(src_str, dst_str)
                         .exclude(sync_pair.excludes.clone().unwrap_or_default())
                         .include(includes)
+                        .dry_run(opts.dry_run)
+                        .create_empty_src_dirs(create_empty_src_dirs)
                         .build();
                     (format!("{}/sync/sync", rc_url), serde_json::to_value(req)?)
                 }
@@ -1068,6 +1113,8 @@ impl SyncPairConfig {
                     let req = crate::rclone_request::CopyBuilder::new(src_str, dst_str)
                         .exclude(sync_pair.excludes.clone().unwrap_or_default())
                         .include(includes)
+                        .dry_run(opts.dry_run)
+                        .create_empty_src_dirs(create_empty_src_dirs)
                         .build();
                     (format!("{}/sync/copy", rc_url), serde_json::to_value(req)?)
                 }
@@ -1075,6 +1122,9 @@ impl SyncPairConfig {
                     let req = crate::rclone_request::MoveBuilder::new(src_str, dst_str)
                         .exclude(sync_pair.excludes.clone().unwrap_or_default())
                         .include(includes)
+                        .dry_run(opts.dry_run)
+                        .create_empty_src_dirs(create_empty_src_dirs)
+                        .delete_empty_src_dirs(opts.delete_empty_src_dirs)
                         .build();
                     (format!("{}/sync/move", rc_url), serde_json::to_value(req)?)
                 }

@@ -17,7 +17,7 @@ pub struct MainView;
 
 impl MainView {
     pub fn help_text(&self) -> String {
-        "q: quit | ↑/↓: Up/Down | SPACE: select | a: all | CTRL+s: run | p: progress | o: bisync opts | ALT+e: error | e: edit | CTRL+a: add | ALT+SHIFT+I: info".to_string()
+        "q: quit | ↑/↓: Up/Down | SPACE: select | a: all | CTRL+s: run | p: progress | o: options | ALT+e: error | e: edit | CTRL+a: add | ALT+SHIFT+I: info".to_string()
     }
 
     pub fn handle_key_event(&mut self, key_event: KeyEvent, app: &mut App) -> ViewAction {
@@ -45,31 +45,30 @@ impl MainView {
                 // Return the ViewAction directly, matching your architecture
                 ViewAction::OpenPopup(View::About(crate::views::about::AboutView::new(info)))
             }
+            // Options belong to a single entry and depend on its type, so
+            // they're edited for the pair under the cursor - not for the
+            // (possibly mixed-type) selection.
             KeyCode::Char('o') => {
-                let sync_pairs = app.sync_pairs.try_read().unwrap();
-                let has_bisync = sync_pairs
-                    .iter()
-                    .filter(|v| v.try_read().unwrap().selected)
-                    .any(|v| {
-                        v.try_read().unwrap().sync_pair.sync_type == crate::config::SyncType::BiSync
-                    });
-                if has_bisync {
-                    ViewAction::OpenPopup(View::BisyncOptions(
-                        crate::views::bisync_options::BisyncOptionsView::new(app),
-                    ))
-                } else {
-                    let close = Action {
-                        name: "Close".to_string(),
-                        description: "ESC: close".to_string(),
-                        key_code: KeyCode::Esc,
-                        callback: std::sync::Arc::new(|handler| handler.close_message()),
-                    };
-                    ViewAction::OpenPopup(View::Message(Message::new(
-                        Severity::Info,
-                        "Bisync Options".to_string(),
-                        "Please select at least one bisync pair to configure options.".to_string(),
-                        vec![close],
-                    )))
+                let view = app
+                    .sync_pairs_tbl_state
+                    .selected()
+                    .and_then(|idx| crate::views::options::OptionsView::new(idx, app));
+                match view {
+                    Some(view) => ViewAction::OpenPopup(View::Options(view)),
+                    None => {
+                        let close = Action {
+                            name: "Close".to_string(),
+                            description: "ESC: close".to_string(),
+                            key_code: KeyCode::Esc,
+                            callback: std::sync::Arc::new(|handler| handler.close_message()),
+                        };
+                        ViewAction::OpenPopup(View::Message(Message::new(
+                            Severity::Info,
+                            "Options".to_string(),
+                            "There is no sync pair to configure options for.".to_string(),
+                            vec![close],
+                        )))
+                    }
                 }
             }
             KeyCode::Char('s' | 'S') if key_event.modifiers == KeyModifiers::CONTROL => {

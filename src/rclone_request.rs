@@ -26,6 +26,13 @@ pub struct RequestBase {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "_async")]
     pub async_op: Option<bool>,
+
+    /// Global rclone flags that have no dedicated rc parameter, passed as the
+    /// `_config` blob (https://rclone.org/rc/#setting-config-flags-with-config).
+    /// Keys are rclone's internal option names, e.g. `DryRun` for `--dry-run`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "_config")]
+    pub config: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 // BiSync uses different parameter names: path1 and path2 instead of srcFs/dstFs
@@ -108,6 +115,39 @@ pub trait Builder: Sized {
     }
 }
 
+/// Builders whose request carries the generic `_config` blob. Bisync is
+/// deliberately not one of them: it has dedicated parameters (`dryRun`, ...)
+/// for what the others can only express through `_config`.
+pub trait Configurable: Builder<Base = RequestBase> {
+    /// Sets one rclone internal option name in the `_config` blob.
+    fn set_config(&mut self, key: &str, value: serde_json::Value) {
+        self.base_mut()
+            .config
+            .get_or_insert_with(serde_json::Map::new)
+            .insert(key.to_string(), value);
+    }
+
+    /// `--dry-run`.
+    fn dry_run(mut self, dry_run: bool) -> Self {
+        if dry_run {
+            self.set_config("DryRun", serde_json::Value::Bool(true));
+        }
+        self
+    }
+
+    /// `--update`: skip files that are newer on the destination.
+    fn update_older(mut self, update: bool) -> Self {
+        if update {
+            self.set_config("UpdateOlder", serde_json::Value::Bool(true));
+        }
+        self
+    }
+}
+
+impl Configurable for CopyBuilder {}
+impl Configurable for SyncBuilder {}
+impl Configurable for MoveBuilder {}
+
 // ============= BISYNC =============
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BiSync {
@@ -135,6 +175,10 @@ pub struct BiSync {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "checkAccess")]
     pub check_access: Option<bool>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "createEmptySrcDirs")]
+    pub create_empty_src_dirs: Option<bool>,
 }
 
 pub struct BiSyncBuilder {
@@ -145,6 +189,7 @@ pub struct BiSyncBuilder {
     workdir: Option<String>,
     dry_run: Option<bool>,
     check_access: Option<bool>,
+    create_empty_src_dirs: Option<bool>,
 }
 
 impl Builder for BiSyncBuilder {
@@ -164,6 +209,7 @@ impl Builder for BiSyncBuilder {
             workdir: self.workdir,
             dry_run: self.dry_run,
             check_access: self.check_access,
+            create_empty_src_dirs: self.create_empty_src_dirs,
         }
     }
 }
@@ -183,11 +229,21 @@ impl BiSyncBuilder {
             workdir: None,
             dry_run: None,
             check_access: None,
+            create_empty_src_dirs: None,
         }
     }
 
+    // The setters below only emit a parameter when it is switched on -
+    // rclone's own default for each of them is off, so sending an explicit
+    // `false` would only add noise to the request.
+
     pub fn resync(mut self, resync: bool) -> Self {
-        self.resync = Some(resync);
+        self.resync = resync.then_some(true);
+        self
+    }
+
+    pub fn create_empty_src_dirs(mut self, create: bool) -> Self {
+        self.create_empty_src_dirs = create.then_some(true);
         self
     }
 
@@ -197,12 +253,12 @@ impl BiSyncBuilder {
     }
 
     pub fn dry_run(mut self, dry_run: bool) -> Self {
-        self.dry_run = Some(dry_run);
+        self.dry_run = dry_run.then_some(true);
         self
     }
 
     pub fn check_access(mut self, check_access: bool) -> Self {
-        self.check_access = Some(check_access);
+        self.check_access = check_access.then_some(true);
         self
     }
 }
@@ -214,12 +270,13 @@ pub struct Copy {
     pub base: RequestBase,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub update: Option<bool>,
+    #[serde(rename = "createEmptySrcDirs")]
+    pub create_empty_src_dirs: Option<bool>,
 }
 
 pub struct CopyBuilder {
     base: RequestBase,
-    update: Option<bool>,
+    create_empty_src_dirs: Option<bool>,
 }
 
 impl Builder for CopyBuilder {
@@ -233,7 +290,7 @@ impl Builder for CopyBuilder {
     fn build(self) -> Copy {
         Copy {
             base: self.base,
-            update: self.update,
+            create_empty_src_dirs: self.create_empty_src_dirs,
         }
     }
 }
@@ -246,13 +303,14 @@ impl CopyBuilder {
                 dst_fs,
                 filter: None,
                 async_op: Some(true), // Default to true
+                config: None,
             },
-            update: None,
+            create_empty_src_dirs: None,
         }
     }
 
-    pub fn update(mut self, update: bool) -> Self {
-        self.update = Some(update);
+    pub fn create_empty_src_dirs(mut self, create: bool) -> Self {
+        self.create_empty_src_dirs = Some(create);
         self
     }
 }
@@ -263,13 +321,15 @@ pub struct Sync {
     #[serde(flatten)]
     pub base: RequestBase,
 
+    // sync/sync has no deleteEmptySrcDirs - only sync/move does.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub delete_empty_src_dirs: Option<bool>,
+    #[serde(rename = "createEmptySrcDirs")]
+    pub create_empty_src_dirs: Option<bool>,
 }
 
 pub struct SyncBuilder {
     base: RequestBase,
-    delete_empty_src_dirs: Option<bool>,
+    create_empty_src_dirs: Option<bool>,
 }
 
 impl Builder for SyncBuilder {
@@ -283,7 +343,7 @@ impl Builder for SyncBuilder {
     fn build(self) -> Sync {
         Sync {
             base: self.base,
-            delete_empty_src_dirs: self.delete_empty_src_dirs,
+            create_empty_src_dirs: self.create_empty_src_dirs,
         }
     }
 }
@@ -296,13 +356,14 @@ impl SyncBuilder {
                 dst_fs,
                 filter: None,
                 async_op: Some(true), // Default to true
+                config: None,
             },
-            delete_empty_src_dirs: None,
+            create_empty_src_dirs: None,
         }
     }
 
-    pub fn delete_empty_src_dirs(mut self, delete: bool) -> Self {
-        self.delete_empty_src_dirs = Some(delete);
+    pub fn create_empty_src_dirs(mut self, create: bool) -> Self {
+        self.create_empty_src_dirs = Some(create);
         self
     }
 }
@@ -314,11 +375,17 @@ pub struct Move {
     pub base: RequestBase,
 
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "createEmptySrcDirs")]
+    pub create_empty_src_dirs: Option<bool>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "deleteEmptySrcDirs")]
     pub delete_empty_src_dirs: Option<bool>,
 }
 
 pub struct MoveBuilder {
     base: RequestBase,
+    create_empty_src_dirs: Option<bool>,
     delete_empty_src_dirs: Option<bool>,
 }
 
@@ -333,6 +400,7 @@ impl Builder for MoveBuilder {
     fn build(self) -> Move {
         Move {
             base: self.base,
+            create_empty_src_dirs: self.create_empty_src_dirs,
             delete_empty_src_dirs: self.delete_empty_src_dirs,
         }
     }
@@ -346,13 +414,65 @@ impl MoveBuilder {
                 dst_fs,
                 filter: None,
                 async_op: Some(true), // Default to true
+                config: None,
             },
+            create_empty_src_dirs: None,
             delete_empty_src_dirs: None,
         }
+    }
+
+    pub fn create_empty_src_dirs(mut self, create: bool) -> Self {
+        self.create_empty_src_dirs = Some(create);
+        self
     }
 
     pub fn delete_empty_src_dirs(mut self, delete: bool) -> Self {
         self.delete_empty_src_dirs = Some(delete);
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Bisync has a dedicated `dryRun` parameter.
+    #[test]
+    fn bisync_serializes_dry_run_as_a_parameter() {
+        let req = BiSyncBuilder::new("/src".to_string(), "/dst".to_string())
+            .dry_run(true)
+            .check_access(true)
+            .build();
+        let json = serde_json::to_value(req).unwrap();
+        assert_eq!(json["dryRun"], serde_json::json!(true));
+        assert_eq!(json["checkAccess"], serde_json::json!(true));
+        assert!(json.get("_config").is_none());
+    }
+
+    /// The other operations have no dry-run parameter, so it has to travel in
+    /// the `_config` blob under rclone's internal option name.
+    #[test]
+    fn copy_serializes_dry_run_in_config_blob() {
+        let req = CopyBuilder::new("/src".to_string(), "/dst".to_string())
+            .dry_run(true)
+            .update_older(true)
+            .build();
+        let json = serde_json::to_value(req).unwrap();
+        assert_eq!(json["_config"]["DryRun"], serde_json::json!(true));
+        assert_eq!(json["_config"]["UpdateOlder"], serde_json::json!(true));
+    }
+
+    /// Unset options must be omitted entirely rather than sent as `false`,
+    /// so rclone keeps its own defaults.
+    #[test]
+    fn unset_options_are_omitted() {
+        let req = MoveBuilder::new("/src".to_string(), "/dst".to_string())
+            .dry_run(false)
+            .delete_empty_src_dirs(true)
+            .build();
+        let json = serde_json::to_value(req).unwrap();
+        assert_eq!(json["deleteEmptySrcDirs"], serde_json::json!(true));
+        assert!(json.get("createEmptySrcDirs").is_none());
+        assert!(json.get("_config").is_none());
     }
 }

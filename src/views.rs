@@ -1,6 +1,6 @@
 pub mod about;
-pub mod bisync_options;
 pub mod main;
+pub mod options;
 pub mod progress;
 pub mod sync_pair_form;
 
