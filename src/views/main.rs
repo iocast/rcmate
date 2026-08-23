@@ -17,7 +17,92 @@ pub struct MainView;
 
 impl MainView {
     pub fn help_text(&self) -> String {
-        "q: quit | ↑/↓: Up/Down | SPACE: select | a: all | CTRL+s: run | p: progress | o: options | ALT+e: error | e: edit | CTRL+a: add | ALT+SHIFT+I: info".to_string()
+        "q: quit | ↑/↓: Up/Down | SPACE: select | a: all | CTRL+s: run | p: progress | o: options | ALT+e: error | e: edit | CTRL+a: add | DEL: delete | ALT+SHIFT+I: info".to_string()
+    }
+
+    /// Builds the confirmation popup for DEL. A bisync pair always gets a
+    /// third choice - delete the config entry only, or also the listing/lock
+    /// files bisync keeps in the rclone workdir - so deletion never silently
+    /// orphans or silently wipes that state. The popup shows the exact file
+    /// prefix (everything before `.pathX.xxx`) so it's clear what would be
+    /// removed - see `SyncPairConfig::bisync_state_files`.
+    fn confirm_delete(&mut self, app: &App) -> ViewAction {
+        let Some(idx) = app.sync_pairs_tbl_state.selected() else {
+            return ViewAction::None;
+        };
+        let sync_pairs = app.sync_pairs.try_read().unwrap();
+        let Some(pair_arc) = sync_pairs.get(idx).cloned() else {
+            return ViewAction::None;
+        };
+        drop(sync_pairs);
+        let pair = pair_arc.try_read().unwrap();
+        let name = pair.sync_pair.name.clone();
+        let is_bisync = pair.sync_pair.sync_type == crate::config::SyncType::BiSync;
+        let prefix = is_bisync.then(|| pair.sync_pair.bisync_session_prefix());
+        let state_file_count = match (&prefix, app.rclone.try_read().unwrap().workdir.as_ref()) {
+            (Some(_), Some(workdir)) => pair.sync_pair.bisync_state_files(workdir).len(),
+            _ => 0,
+        };
+        drop(pair);
+
+        let cancel = Action {
+            name: "Cancel".to_string(),
+            description: "Esc: cancel".to_string(),
+            key_code: KeyCode::Esc,
+            callback: std::sync::Arc::new(|handler| handler.close_message()),
+        };
+
+        match prefix {
+            None => {
+                let confirm = Action {
+                    name: "Delete".to_string(),
+                    description: "Enter: delete".to_string(),
+                    key_code: KeyCode::Enter,
+                    callback: std::sync::Arc::new(move |handler| {
+                        handler.delete_sync_pair(idx, false)
+                    }),
+                };
+                ViewAction::OpenPopup(View::Message(Message::new(
+                    Severity::Warn,
+                    "Delete sync pair".to_string(),
+                    format!("Delete sync pair \"{}\"? This cannot be undone.", name),
+                    vec![confirm, cancel],
+                )))
+            }
+            Some(prefix) => {
+                let both = Action {
+                    name: "Delete both".to_string(),
+                    description: "Enter: entry + bisync state".to_string(),
+                    key_code: KeyCode::Enter,
+                    callback: std::sync::Arc::new(move |handler| handler.delete_sync_pair(idx, true)),
+                };
+                let entry_only = Action {
+                    name: "Entry only".to_string(),
+                    description: "d: entry only".to_string(),
+                    key_code: KeyCode::Char('d'),
+                    callback: std::sync::Arc::new(move |handler| {
+                        handler.delete_sync_pair(idx, false)
+                    }),
+                };
+                let found_note = if state_file_count > 0 {
+                    format!(
+                        "{} matching state file(s) found in the rclone workdir.",
+                        state_file_count
+                    )
+                } else {
+                    "No matching state files found in the rclone workdir right now.".to_string()
+                };
+                ViewAction::OpenPopup(View::Message(Message::new(
+                    Severity::Warn,
+                    "Delete sync pair".to_string(),
+                    format!(
+                        "Delete sync pair \"{}\"?\n\nThis is a bisync pair. Its workdir file prefix is:\n{}\n\n{}\n\nAlso delete those bisync state files (listings/lock), or keep them and only delete the config entry?",
+                        name, prefix, found_note
+                    ),
+                    vec![both, entry_only, cancel],
+                )))
+            }
+        }
     }
 
     pub fn handle_key_event(&mut self, key_event: KeyEvent, app: &mut App) -> ViewAction {
@@ -143,6 +228,7 @@ impl MainView {
                 app.events.send(AppEvent::SelectAll);
                 ViewAction::None
             }
+            KeyCode::Delete => self.confirm_delete(app),
             KeyCode::Char('p') => {
                 if let Some(idx) = app.sync_pairs_tbl_state.selected() {
                     let sync_pairs = app.sync_pairs.try_read().unwrap();

@@ -143,6 +143,10 @@ pub struct Message {
 
 pub trait ActionHandler {
     fn close_message(&mut self);
+    /// Removes the sync pair at `idx` and persists the config. When
+    /// `wipe_bisync_state` is set and the pair is a bisync pair, also
+    /// deletes its listing/lock files from the rclone workdir.
+    fn delete_sync_pair(&mut self, idx: usize, wipe_bisync_state: bool);
 }
 
 impl Message {
