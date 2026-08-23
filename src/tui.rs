@@ -16,7 +16,7 @@ use crate::{
     event::Severity,
     views::{
         ViewAction, about::AboutView, main::MainView, options::OptionsView, progress::ProgressView,
-        sync_pair_form::SyncPairFormView,
+        settings_form::SettingsFormView, sync_pair_form::SyncPairFormView,
     },
 };
 
@@ -25,6 +25,7 @@ pub enum View {
     Main(MainView),
     SyncPairForm(SyncPairFormView),
     Options(OptionsView),
+    SettingsForm(SettingsFormView),
     Message(Message),
     About(AboutView),
     Progress(ProgressView),
@@ -36,6 +37,7 @@ impl View {
             View::Main(v) => v.help_text(),
             View::SyncPairForm(v) => v.help_text(),
             View::Options(v) => v.help_text(),
+            View::SettingsForm(v) => v.help_text(),
             View::About(v) => v.help_text(),
             View::Message(msg) => msg.help_text(),
             View::Progress(v) => v.help_text(),
@@ -51,6 +53,7 @@ impl View {
             View::Main(v) => v.handle_key_event(key_event, app),
             View::SyncPairForm(v) => v.handle_key_event(key_event, app),
             View::Options(v) => v.handle_key_event(key_event, app),
+            View::SettingsForm(v) => v.handle_key_event(key_event, app),
             View::About(v) => v.handle_key_event(key_event, app),
             View::Message(msg) => {
                 let action_to_run = msg
@@ -76,6 +79,7 @@ impl View {
             View::Main(v) => v.render(area, buf, app),
             View::SyncPairForm(v) => v.render(area, buf, app),
             View::Options(v) => v.render(area, buf, app),
+            View::SettingsForm(v) => v.render(area, buf, app),
             View::About(v) => v.render(area, buf, app),
             View::Message(msg) => Widget::render(msg.clone(), area, buf),
             View::Progress(v) => v.render(area, buf, app),
@@ -88,8 +92,16 @@ impl Widget for &App {
     where
         Self: Sized,
     {
+        // Navigation keys at the bottom (delegated to the active view/popup)
+        let help_text = if let Some(popup) = &self.popup {
+            popup.help_text()
+        } else {
+            self.active_view.help_text()
+        };
+        let footer_height = help_text.lines().count().max(1) as u16;
+
         let chunks = Layout::default()
-            .constraints([Constraint::Min(3), Constraint::Length(2)])
+            .constraints([Constraint::Min(3), Constraint::Length(footer_height)])
             .split(area);
 
         // 1. Render the active base view
@@ -100,13 +112,7 @@ impl Widget for &App {
             popup.render(area, buf, self);
         }
 
-        // 3. Render navigation keys at the bottom (delegated to the active view/popup)
-        let help_text = if let Some(popup) = &self.popup {
-            popup.help_text()
-        } else {
-            self.active_view.help_text()
-        };
-
+        // 3. Render the footer
         Paragraph::new(Text::from(help_text))
             .block(Block::default())
             .alignment(Alignment::Center)
