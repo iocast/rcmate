@@ -137,13 +137,20 @@ destination = "remote:media"
 
 ## 📖 TUI Keybindings
 
-*(Update these based on your actual `views/` implementations)*
-- `↓`: Move selection down
-- `↑`: Move selection up
+- `↑` / `↓`: Move selection up/down
 - `SPACE`: Toggle selection for sync
-- `ALT+s`: Start synchronization for selected pairs
-- `Shift + Alt + I`: Open About/Info dialog
-- `q` / `Ctrl+C`: Quit application
+- `a`: Toggle selection for all pairs
+- `CTRL+s`: Start synchronization for selected pairs
+- `CTRL+a`: Add a new sync pair
+- `e`: Edit the highlighted sync pair
+- `o`: Bisync options for the selected pairs
+- `p`: Per-file progress for the highlighted pair
+- `ALT+e`: Show the error of the highlighted pair
+- `SHIFT+ALT+I`: Open About/Info dialog
+- `q` / `CTRL+C`: Quit application
+
+Both `CTRL+a` and `e` open the same form. `Tab` / `Shift+Tab` move between
+fields, `Enter` saves the pair back to the config file, and `Esc` cancels.
 
 ## 📄 License
 

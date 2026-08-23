@@ -1,8 +1,8 @@
 pub mod about;
 pub mod bisync_options;
-pub mod edit;
 pub mod main;
 pub mod progress;
+pub mod sync_pair_form;
 
 use crate::tui::View;
 

@@ -15,15 +15,15 @@ use crate::{
     app::App,
     event::Severity,
     views::{
-        ViewAction, about::AboutView, bisync_options::BisyncOptionsView, edit::EditView,
-        main::MainView, progress::ProgressView,
+        ViewAction, about::AboutView, bisync_options::BisyncOptionsView, main::MainView,
+        progress::ProgressView, sync_pair_form::SyncPairFormView,
     },
 };
 
 // Unified View enum replacing Screen and Overlay
 pub enum View {
     Main(MainView),
-    Edit(EditView),
+    SyncPairForm(SyncPairFormView),
     BisyncOptions(BisyncOptionsView),
     Message(Message),
     About(AboutView),
@@ -34,7 +34,7 @@ impl View {
     pub fn help_text(&self) -> String {
         match self {
             View::Main(v) => v.help_text(),
-            View::Edit(v) => v.help_text(),
+            View::SyncPairForm(v) => v.help_text(),
             View::BisyncOptions(v) => v.help_text(),
             View::About(v) => v.help_text(),
             View::Message(msg) => msg.help_text(),
@@ -49,7 +49,7 @@ impl View {
     ) -> ViewAction {
         match self {
             View::Main(v) => v.handle_key_event(key_event, app),
-            View::Edit(v) => v.handle_key_event(key_event, app),
+            View::SyncPairForm(v) => v.handle_key_event(key_event, app),
             View::BisyncOptions(v) => v.handle_key_event(key_event, app),
             View::About(v) => v.handle_key_event(key_event, app),
             View::Message(msg) => {
@@ -74,7 +74,7 @@ impl View {
     pub fn render(&self, area: Rect, buf: &mut Buffer, app: &App) {
         match self {
             View::Main(v) => v.render(area, buf, app),
-            View::Edit(v) => v.render(area, buf, app),
+            View::SyncPairForm(v) => v.render(area, buf, app),
             View::BisyncOptions(v) => v.render(area, buf, app),
             View::About(v) => v.render(area, buf, app),
             View::Message(msg) => Widget::render(msg.clone(), area, buf),

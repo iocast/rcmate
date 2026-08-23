@@ -17,7 +17,7 @@ pub struct MainView;
 
 impl MainView {
     pub fn help_text(&self) -> String {
-        "q: quit | ↑/↓: Up/Down | SPACE: select | a: all | ALT+s: run | ALT+p: progress | o: bisync opts | ALT+e: error | e: edit | ALT+SHIFT+I: info".to_string()
+        "q: quit | ↑/↓: Up/Down | SPACE: select | a: all | CTRL+s: run | p: progress | o: bisync opts | ALT+e: error | e: edit | CTRL+a: add | ALT+SHIFT+I: info".to_string()
     }
 
     pub fn handle_key_event(&mut self, key_event: KeyEvent, app: &mut App) -> ViewAction {
@@ -72,7 +72,7 @@ impl MainView {
                     )))
                 }
             }
-            KeyCode::Char('s') if key_event.modifiers == KeyModifiers::ALT => {
+            KeyCode::Char('s' | 'S') if key_event.modifiers == KeyModifiers::CONTROL => {
                 let sync_pairs = app.sync_pairs.try_read().unwrap();
                 let any_selected = sync_pairs.iter().any(|v| v.try_read().unwrap().selected);
                 if any_selected {
@@ -125,19 +125,26 @@ impl MainView {
                     }
                 } else {
                     if let Some(idx) = app.sync_pairs_tbl_state.selected() {
-                        ViewAction::SwitchTo(View::Edit(crate::views::edit::EditView::new(
-                            idx, app,
-                        )))
+                        ViewAction::SwitchTo(View::SyncPairForm(
+                            crate::views::sync_pair_form::SyncPairFormView::edit(idx, app),
+                        ))
                     } else {
                         ViewAction::None
                     }
                 }
             }
+            // Must come before the bare 'a' arm below, which would otherwise
+            // also match CTRL+a and toggle the selection instead.
+            KeyCode::Char('a' | 'A') if key_event.modifiers == KeyModifiers::CONTROL => {
+                ViewAction::SwitchTo(View::SyncPairForm(
+                    crate::views::sync_pair_form::SyncPairFormView::add(),
+                ))
+            }
             KeyCode::Char('a') => {
                 app.events.send(AppEvent::SelectAll);
                 ViewAction::None
             }
-            KeyCode::Char('p') if key_event.modifiers == KeyModifiers::ALT => {
+            KeyCode::Char('p') => {
                 if let Some(idx) = app.sync_pairs_tbl_state.selected() {
                     let sync_pairs = app.sync_pairs.try_read().unwrap();
                     if let Some(pair_arc) = sync_pairs.get(idx) {
