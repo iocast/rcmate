@@ -1,0 +1,7 @@
+# includes
++ /project-a/**
+
+# escludes
+- /project-b/
+- target/
+- node_modules/

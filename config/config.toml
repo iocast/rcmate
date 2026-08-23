@@ -8,6 +8,13 @@ config = '~/.config/rcmate/rclone.conf'
 workdir = '~/.local/share/rcmate/bisync'
 
 [[sync_pairs]]
+name = "Projects"
+type = "sync"
+source = "~/projects"
+destination = "~/projects_backup"
+filter = "~/projects/filter-projects.txt"
+
+[[sync_pairs]]
 name = "Test copy"
 type = "copy"
 source = "~/a/x.tmp"

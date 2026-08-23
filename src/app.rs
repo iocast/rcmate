@@ -311,6 +311,12 @@ impl App {
 
     pub fn next(&mut self) {
         let sync_pairs = self.sync_pairs.try_read().unwrap();
+        // A config can start out (or be left) with no pairs at all, and the
+        // wrap-around arithmetic below underflows on an empty list.
+        if sync_pairs.is_empty() {
+            self.sync_pairs_tbl_state.select(None);
+            return;
+        }
         let i = match self.sync_pairs_tbl_state.selected() {
             Some(i) => {
                 if i >= sync_pairs.len() - 1 {
@@ -326,6 +332,10 @@ impl App {
 
     pub fn previous(&mut self) {
         let sync_pairs = self.sync_pairs.try_read().unwrap();
+        if sync_pairs.is_empty() {
+            self.sync_pairs_tbl_state.select(None);
+            return;
+        }
         let i = match self.sync_pairs_tbl_state.selected() {
             Some(i) => {
                 if i == 0 {
