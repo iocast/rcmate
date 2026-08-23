@@ -15,8 +15,8 @@ use crate::{
     app::App,
     event::Severity,
     views::{
-        ViewAction, about::AboutView, bisync_options::BisyncOptionsView, main::MainView,
-        progress::ProgressView, sync_pair_form::SyncPairFormView,
+        ViewAction, about::AboutView, main::MainView, options::OptionsView, progress::ProgressView,
+        sync_pair_form::SyncPairFormView,
     },
 };
 
@@ -24,7 +24,7 @@ use crate::{
 pub enum View {
     Main(MainView),
     SyncPairForm(SyncPairFormView),
-    BisyncOptions(BisyncOptionsView),
+    Options(OptionsView),
     Message(Message),
     About(AboutView),
     Progress(ProgressView),
@@ -35,7 +35,7 @@ impl View {
         match self {
             View::Main(v) => v.help_text(),
             View::SyncPairForm(v) => v.help_text(),
-            View::BisyncOptions(v) => v.help_text(),
+            View::Options(v) => v.help_text(),
             View::About(v) => v.help_text(),
             View::Message(msg) => msg.help_text(),
             View::Progress(v) => v.help_text(),
@@ -50,7 +50,7 @@ impl View {
         match self {
             View::Main(v) => v.handle_key_event(key_event, app),
             View::SyncPairForm(v) => v.handle_key_event(key_event, app),
-            View::BisyncOptions(v) => v.handle_key_event(key_event, app),
+            View::Options(v) => v.handle_key_event(key_event, app),
             View::About(v) => v.handle_key_event(key_event, app),
             View::Message(msg) => {
                 let action_to_run = msg
@@ -75,7 +75,7 @@ impl View {
         match self {
             View::Main(v) => v.render(area, buf, app),
             View::SyncPairForm(v) => v.render(area, buf, app),
-            View::BisyncOptions(v) => v.render(area, buf, app),
+            View::Options(v) => v.render(area, buf, app),
             View::About(v) => v.render(area, buf, app),
             View::Message(msg) => Widget::render(msg.clone(), area, buf),
             View::Progress(v) => v.render(area, buf, app),

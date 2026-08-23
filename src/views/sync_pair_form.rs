@@ -1,5 +1,5 @@
 use crate::app::App;
-use crate::config::{BisyncOptions, SyncPairConfig, SyncPairUi, SyncState, SyncStatus, SyncType};
+use crate::config::{SyncOptions, SyncPairConfig, SyncPairUi, SyncState, SyncStatus, SyncType};
 use crate::event::Severity;
 use crate::tui::{Action, Message, View};
 use crate::views::ViewAction;
@@ -293,7 +293,7 @@ impl SyncPairFormView {
             } else {
                 Some(self.filter.value.trim().to_string())
             },
-            bisync_opts: BisyncOptions::default(),
+            options: SyncOptions::default(),
         })
     }
 
@@ -303,13 +303,10 @@ impl SyncPairFormView {
             Mode::Edit { sync_pair_index } => {
                 let sync_pairs = app.sync_pairs.try_write().unwrap();
                 let mut pair = sync_pairs[sync_pair_index].try_write().unwrap();
-                // Keep the existing bisync options - they're runtime-only state
-                // configured from the main view, not part of this form.
-                let bisync_opts = pair.sync_pair.bisync_opts.clone();
-                pair.sync_pair = SyncPairConfig {
-                    bisync_opts,
-                    ..config
-                };
+                // Keep the existing options - they're edited from the Options
+                // popup on the main view, not from this form.
+                let options = pair.sync_pair.options.clone();
+                pair.sync_pair = SyncPairConfig { options, ..config };
             }
             Mode::Add => {
                 let index = {

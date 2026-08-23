@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 <!-- next-header -->
 
+## [Unreleased]
+
+### Added
+- Per sync pair options, persisted to the config file under `[sync_pairs.options]`. The Options popup (`o`) now edits the pair under the cursor rather than the whole selection, and offers only the options the pair's type accepts.
+- `dry_run` option for every sync type. It is sent as bisync's dedicated `dryRun` parameter, and through the rc `_config` blob (`{"DryRun": true}`) for `sync`, `copy` and `move`, which have no parameter of their own for it.
+- `create_empty_src_dirs` for all types and `delete_empty_src_dirs` for `move`, plus `check_access` for bisync. `create_empty_src_dirs` does not apply to a pair whose source or destination is a single file — such a pair runs against the parent directories with an include filter — so for those it is hidden from the popup, left out of the request, and not written to the config file.
+
+### Changed
+- Renamed the "Bisync Options" popup to "Options"; bisync options were previously runtime-only and lost on restart.
+
+### Fixed
+- `sync` sent a `delete_empty_src_dirs` parameter that `sync/sync` does not accept (only `sync/move` does), and `copy` sent `update`, which is not an rc parameter either — the file-mode two-way sync now passes `--update` correctly via `_config` (`UpdateOlder`), so the older side can no longer overwrite the newer one.
+
 ## [0.2.0] - 2026-07-26
 
 ### Added
