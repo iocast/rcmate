@@ -34,7 +34,7 @@ use crate::app::App;
     disable_version_flag = true // Disable default -V so we can use -v
 )]
 struct Args {
-    #[arg(long, default_value = "~/.local/share/rcmate/config.toml")]
+    #[arg(long, default_value = "~/.config/rcmate/config.toml")]
     config: PathBuf,
 
     #[arg(

@@ -47,11 +47,11 @@ The compiled binary will be located in `target/release/rcmate` (or `rcmate.exe` 
 
 ## 🚀 Usage & Testing
 
-Run the application using `cargo` or the compiled binary. The default configuration path is `~/.local/share/rcmate/config.toml`.
+Run the application using `cargo` or the compiled binary. The default configuration path is `~/.config/rcmate/config.toml`.
 
 ```powershell
 # Run with specific rclone config, workdir, and app config
-cargo run -- --rclone-config ~/.local/share/rcmate/rclone.conf --workdir ~/.local/share/rcmate/sync --config ~/.local/share/rcmate/config.toml
+cargo run -- --rclone-config ~/.local/share/rcmate/rclone.conf --workdir ~/.local/share/rcmate/sync --config ~/.config/rcmate/config.toml
 
 # Run with just the app config (uses default rclone settings)
 cargo run -- --config ~/.local/share/rcmate/config.toml
@@ -59,7 +59,7 @@ cargo run -- --config ~/.local/share/rcmate/config.toml
 
 ### CLI Arguments
 
-- `--config <PATH>`: Path to the rcmate TOML config file (Default: `~/.local/share/rcmate/config.toml`).
+- `--config <PATH>`: Path to the rcmate TOML config file (Default: `~/.config/rcmate/config.toml`).
 - `--rclone <BIN>`: Path or name of the rclone binary (Default: `rclone`).
 - `--rclone-config <PATH>`: Path to the rclone configuration file.
 - `--workdir <PATH>`: Working directory for rclone (useful for bisync).

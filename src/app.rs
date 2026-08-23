@@ -485,6 +485,37 @@ impl ActionHandler for App {
     fn close_message(&mut self) {
         self.popup = None;
     }
+
+    fn delete_sync_pair(&mut self, idx: usize, wipe_bisync_state: bool) {
+        let removed = {
+            let mut sync_pairs = self.sync_pairs.try_write().unwrap();
+            if idx >= sync_pairs.len() {
+                return;
+            }
+            sync_pairs.remove(idx)
+        };
+
+        if wipe_bisync_state {
+            let pair = removed.try_read().unwrap();
+            if pair.sync_pair.sync_type == SyncType::BiSync {
+                if let Some(workdir) = self.rclone.try_read().unwrap().workdir.clone() {
+                    for f in pair.sync_pair.bisync_state_files(&workdir) {
+                        if let Err(e) = std::fs::remove_file(&f) {
+                            error!("Failed to remove bisync state file {}: {}", f.display(), e);
+                        }
+                    }
+                }
+            }
+        }
+
+        let len = self.sync_pairs.try_read().unwrap().len();
+        self.sync_pairs_tbl_state
+            .select(if len == 0 { None } else { Some(idx.min(len - 1)) });
+
+        if let Err(e) = self.save_config() {
+            error!("Failed to save config after deleting sync pair: {}", e);
+        }
+    }
 }
 
 impl SyncPairConfig {
@@ -504,6 +535,56 @@ impl SyncPairConfig {
         source.is_file()
             || destination.is_file()
             || (!source.to_string_lossy().contains(':') && !source.is_dir())
+    }
+
+    /// Sanitizes a path the way rclone's bisync derives a workdir file
+    /// prefix from Path1/Path2 (see `cmd/bisync/bilib.SessionName`
+    /// upstream): a trailing path separator is trimmed first - otherwise it
+    /// would leave a stray underscore right before the `..` join or the
+    /// `.pathN` suffix - then colons, path separators, and spaces all become
+    /// underscores.
+    fn bisync_sanitize(path: &str) -> String {
+        path.trim_end_matches(['/', '\\'])
+            .chars()
+            .map(|c| if c == ':' || c == '/' || c == '\\' || c == ' ' { '_' } else { c })
+            .collect()
+    }
+
+    /// The workdir file prefix rclone bisync uses for this pair's Path1
+    /// (source) / Path2 (destination), e.g. `<prefix>.path1.lst`,
+    /// `<prefix>.lck`. Mirrors the src/dst strings `run_command` sends to
+    /// `/sync/bisync`, so it matches what an actual run would have created.
+    pub fn bisync_session_prefix(&self) -> String {
+        let source = expand_tilde(PathBuf::from(&self.source))
+            .to_string_lossy()
+            .into_owned();
+        let destination = expand_tilde(PathBuf::from(&self.destination))
+            .to_string_lossy()
+            .into_owned();
+        format!(
+            "{}..{}",
+            Self::bisync_sanitize(&source),
+            Self::bisync_sanitize(&destination)
+        )
+    }
+
+    /// Any bisync state files (listings, lock file, ...) this pair has left
+    /// in `workdir`. Empty if it was never resynced/run, or `workdir`
+    /// doesn't exist. See https://rclone.org/bisync/#workdir-and-cleanup.
+    pub fn bisync_state_files(&self, workdir: &Path) -> Vec<PathBuf> {
+        let prefix = format!("{}.", self.bisync_session_prefix());
+        let Ok(entries) = std::fs::read_dir(workdir) else {
+            return Vec::new();
+        };
+        entries
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| {
+                p.file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.starts_with(&prefix))
+            })
+            .collect()
     }
 
     pub async fn execute_sync(
