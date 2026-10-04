@@ -725,29 +725,31 @@ impl SyncPairConfig {
                                         error_msg = strip_ansi_escapes::strip_str(error_str);
                                     }
                                 }
-                                if let Some(output_text) = status_json
-                                    .get("output")
-                                    .and_then(|o| o.get("output").and_then(|v| v.as_str()))
-                                {
-                                    if !output_text.is_empty() {
-                                        if !error_msg.is_empty() {
-                                            error_msg.push_str("\n\n");
-                                        }
-                                        error_msg
-                                            .push_str(&strip_ansi_escapes::strip_str(output_text));
-                                        has_error = true;
-                                    }
-                                }
                                 let success = status_json
                                     .get("success")
                                     .and_then(|v| v.as_bool())
                                     .unwrap_or(true);
                                 if !success && !has_error {
                                     has_error = true;
-                                    if error_msg.is_empty() {
-                                        error_msg.push_str(
-                                            "Job failed without a specific error message.",
-                                        );
+                                    error_msg.push_str(
+                                        "Job failed without a specific error message.",
+                                    );
+                                }
+                                // sync/bisync always returns its captured log
+                                // in `output.output`, also on success (e.g.
+                                // NOTICEs about conflict renames), so it's
+                                // only attached as context to a real failure
+                                // - never treated as an error on its own.
+                                if has_error {
+                                    if let Some(output_text) = status_json
+                                        .get("output")
+                                        .and_then(|o| o.get("output").and_then(|v| v.as_str()))
+                                        .filter(|t| !t.is_empty())
+                                    {
+                                        error_msg.push_str("\n\n");
+                                        error_msg.push_str(&strip_ansi_escapes::strip_str(
+                                            output_text,
+                                        ));
                                     }
                                 }
                             }
