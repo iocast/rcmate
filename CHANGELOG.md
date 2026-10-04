@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- Redesigned the sync pair error popup (`ALT+e`): it now scrolls (`↑`/`↓`, `PgUp`/`PgDn`, `Home`/`End`) instead of cutting off long output, shows rclone log lines as time, colored level and message, and no longer splits Windows paths at `\` or `:`. When rclone asks for `--resync`, it shows a hint and `o` opens the pair's options.
+
+### Fixed
+- Bisync runs that succeeded were marked as `Error` whenever rclone logged anything, such as NOTICEs about conflict renames. Only a failed rc job now counts as an error; its log is still shown in the error popup.
+
 ## [0.2.1] - 2026-09-11
 
 ### Added
