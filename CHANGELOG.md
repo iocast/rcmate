@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-10-04
+
 ### Changed
 - Redesigned the sync pair error popup (`ALT+e`): it now scrolls (`↑`/`↓`, `PgUp`/`PgDn`, `Home`/`End`) instead of cutting off long output, shows rclone log lines as time, colored level and message, and no longer splits Windows paths at `\` or `:`. When rclone asks for `--resync`, it shows a hint and `o` opens the pair's options.
 
@@ -57,5 +59,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Automated cross-platform CI/CD pipeline (Linux, macOS, Windows) via GitHub Actions.
 - Project is dual-licensed under MIT and Apache-2.0.
 
-[unreleased]: https://github.com/iocast/rcmate/compare/v0.2.1...HEAD
+[unreleased]: https://github.com/iocast/rcmate/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/iocast/rcmate/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/iocast/rcmate/compare/v0.2.0...v0.2.1
