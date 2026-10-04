@@ -51,7 +51,7 @@ Run the application using `cargo` or the compiled binary. The default configurat
 
 ```powershell
 # Run with specific rclone config, workdir, and app config
-cargo run -- --rclone-config ~/.local/share/rcmate/rclone.conf --workdir ~/.local/share/rcmate/sync --config ~/.config/rcmate/config.toml
+cargo run -- --rclone-config ~/.config/rcmate/rclone.conf --workdir ~/.local/share/rcmate/sync --config ~/.config/rcmate/config.toml
 
 # Run with just the app config (uses default rclone settings)
 cargo run -- --config ~/.local/share/rcmate/config.toml

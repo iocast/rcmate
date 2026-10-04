@@ -5,7 +5,7 @@ log_level = "info"
 [rclone]
 bin = "rclone"
 config = '~/.config/rcmate/rclone.conf'
-workdir = '~/.local/share/rcmate/bisync'
+workdir = '~/.local/share/rcmate/sync'
 
 [[sync_pairs]]
 name = "Projects"
