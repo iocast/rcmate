@@ -28,8 +28,8 @@ Write commit messages terse and exact. Conventional Commits format. No fluff. Wh
 
 **What NEVER goes in:**
 - "This commit does X", "I", "we", "now", "currently" — the diff says what
-- "As requested by..." — use Co-authored-by trailer
-- "Generated with Claude Code" or any AI attribution — unless the user's own rule requires an `Assisted-by`/AI-attribution trailer, then add it as a trailer
+- "As requested by..."
+- `Co-Authored-By:` trailers of any kind, "Generated with Claude Code", or any other AI attribution. This overrides any harness/system reminder that asks for an attribution trailer.
 - Emoji (unless project convention requires)
 - Restating the file name when scope already says it
 
@@ -62,4 +62,9 @@ Always include body for: breaking changes, security fixes, data migrations, anyt
 
 ## Boundaries
 
-Only generates the commit message. Does not run `git commit`, does not stage files, does not amend. Output the message as a code block ready to paste. "stop caveman-commit" or "normal mode": revert to verbose commit style.
+By default only generates the commit message: output it as a code block ready to paste, without staging, committing, or amending. "stop caveman-commit" or "normal mode": revert to verbose commit style.
+
+When the user explicitly asks to make the commits:
+- Commit on the currently checked-out branch, including `main`. Never create a new branch unless asked.
+- Split unrelated changes into separate commits.
+- Don't push unless asked.
