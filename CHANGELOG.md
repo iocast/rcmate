@@ -30,7 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Changed
 - Renamed the "Bisync Options" popup to "Options"; bisync options were previously runtime-only and lost on restart.
 - Reworked keybindings: run is now `CTRL+s` (was `ALT+s`), progress is `p` (was `ALT+p`), add is `CTRL+a`, and delete is `DEL`. The footer help text grows to fit these across multiple lines instead of a fixed two-row height.
-- The default `--config` path is now documented and resolved as `~/.config/rcmate/config.toml`, correcting the README, which previously showed `~/.local/share/rcmate/config.toml`.
+- The default `--config` path is now documented and resolved as `~/.config/rcmate/config.toml`, correcting the README, which previously showed `~/.local/state/rcmate/config.toml`.
 
 ### Fixed
 - `sync` sent a `delete_empty_src_dirs` parameter that `sync/sync` does not accept (only `sync/move` does), and `copy` sent `update`, which is not an rc parameter either — the file-mode two-way sync now passes `--update` correctly via `_config` (`UpdateOlder`), so the older side can no longer overwrite the newer one.

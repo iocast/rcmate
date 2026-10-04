@@ -51,10 +51,10 @@ Run the application using `cargo` or the compiled binary. The default configurat
 
 ```powershell
 # Run with specific rclone config, workdir, and app config
-cargo run -- --rclone-config ~/.config/rcmate/rclone.conf --workdir ~/.local/share/rcmate/sync --config ~/.config/rcmate/config.toml
+cargo run -- --rclone-config ~/.config/rcmate/rclone.conf --workdir ~/.local/state/rcmate/sync --config ~/.config/rcmate/config.toml
 
 # Run with just the app config (uses default rclone settings)
-cargo run -- --config ~/.local/share/rcmate/config.toml
+cargo run -- --config ~/.local/state/rcmate/config.toml
 ```
 
 ### CLI Arguments
@@ -114,13 +114,13 @@ _(Note: Manual triggers still execute the version validation step. Ensure your `
 
 ```toml
 [general]
-log_path = "~/.local/share/rcmate/logs"
+log_path = "~/.local/state/rcmate/logs"
 log_level = "info"
 
 [rclone]
 bin = "rclone"
 # config = "~/.config/rclone/rclone.conf"
-# workdir = "~/.local/share/rcmate/workdir"
+# workdir = "~/.local/state/rcmate/workdir"
 
 [[sync_pairs]]
 name = "Documents Sync"
