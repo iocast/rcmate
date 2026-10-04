@@ -1,11 +1,11 @@
 [general]
-log_path = "~/.local/share/rcmate/logs"
+log_path = "~/.local/state/rcmate/logs"
 log_level = "info"
 
 [rclone]
 bin = "rclone"
 config = '~/.config/rcmate/rclone.conf'
-workdir = '~/.local/share/rcmate/sync'
+workdir = '~/.local/state/rcmate/sync'
 
 [[sync_pairs]]
 name = "Projects"
