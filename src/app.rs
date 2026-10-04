@@ -249,6 +249,8 @@ impl App {
             let action = popup.handle_key_event(key_event, self);
             match action {
                 ViewAction::ClosePopup | ViewAction::SwitchTo(_) => {}
+                // A popup can hand over to another one (e.g. error -> options).
+                ViewAction::OpenPopup(new_popup) => self.popup = Some(new_popup),
                 _ => self.popup = Some(popup),
             }
         } else {

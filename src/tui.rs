@@ -15,7 +15,7 @@ use crate::{
     app::App,
     event::Severity,
     views::{
-        ViewAction, about::AboutView, main::MainView, options::OptionsView, progress::ProgressView,
+        ViewAction, about::AboutView, error::ErrorView, main::MainView, options::OptionsView, progress::ProgressView,
         settings_form::SettingsFormView, sync_pair_form::SyncPairFormView,
     },
 };
@@ -28,6 +28,7 @@ pub enum View {
     SettingsForm(SettingsFormView),
     Message(Message),
     About(AboutView),
+    Error(ErrorView),
     Progress(ProgressView),
 }
 
@@ -39,6 +40,7 @@ impl View {
             View::Options(v) => v.help_text(),
             View::SettingsForm(v) => v.help_text(),
             View::About(v) => v.help_text(),
+            View::Error(v) => v.help_text(),
             View::Message(msg) => msg.help_text(),
             View::Progress(v) => v.help_text(),
         }
@@ -55,6 +57,7 @@ impl View {
             View::Options(v) => v.handle_key_event(key_event, app),
             View::SettingsForm(v) => v.handle_key_event(key_event, app),
             View::About(v) => v.handle_key_event(key_event, app),
+            View::Error(v) => v.handle_key_event(key_event, app),
             View::Message(msg) => {
                 let action_to_run = msg
                     .actions
@@ -81,6 +84,7 @@ impl View {
             View::Options(v) => v.render(area, buf, app),
             View::SettingsForm(v) => v.render(area, buf, app),
             View::About(v) => v.render(area, buf, app),
+            View::Error(v) => v.render(area, buf, app),
             View::Message(msg) => Widget::render(msg.clone(), area, buf),
             View::Progress(v) => v.render(area, buf, app),
         }

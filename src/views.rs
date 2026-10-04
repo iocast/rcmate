@@ -1,4 +1,5 @@
 pub mod about;
+pub mod error;
 pub mod main;
 pub mod options;
 pub mod progress;

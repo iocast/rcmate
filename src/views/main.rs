@@ -194,20 +194,13 @@ impl MainView {
                         if let Some(pair_arc) = sync_pairs.get(idx) {
                             let pair = pair_arc.try_read().unwrap();
                             if pair.status == crate::config::SyncStatus::Error {
-                                let close = Action {
-                                    name: "Close".to_string(),
-                                    description: "ESC: close".to_string(),
-                                    key_code: KeyCode::Esc,
-                                    callback: std::sync::Arc::new(|handler| {
-                                        handler.close_message()
-                                    }),
-                                };
-                                ViewAction::OpenPopup(View::Message(Message::new(
-                                    Severity::Error,
-                                    "sync pair error".to_string(),
-                                    pair.sync_state.messages.join("\n"),
-                                    vec![close],
-                                )))
+                                ViewAction::OpenPopup(View::Error(
+                                    crate::views::error::ErrorView::new(
+                                        idx,
+                                        pair.sync_pair.name.clone(),
+                                        pair.sync_state.messages.clone(),
+                                    ),
+                                ))
                             } else {
                                 ViewAction::None
                             }
