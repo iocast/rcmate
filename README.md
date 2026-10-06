@@ -1,7 +1,5 @@
 # rcmate
 
-![rcmate TUI showing a list of sync pairs](docs/screenshot.png)
-
 **Your Friendly Rclone Companion**
 
 A Terminal User Interface (TUI) for automating, monitoring, and managing [rclone](https://rclone.org/) synchronization tasks.
@@ -10,6 +8,8 @@ A Terminal User Interface (TUI) for automating, monitoring, and managing [rclone
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE-MIT)
 [![GitHub Release](https://img.shields.io/github/v/release/iocast/rcmate?style=flat-square&color=blue)](https://github.com/iocast/rcmate/releases)
 [![Build Status](https://img.shields.io/github/actions/workflow/status/iocast/rcmate/release.yml?style=flat-square&label=build)](https://github.com/iocast/rcmate/actions)
+
+![rcmate TUI showing a list of sync pairs](docs/screenshot.png)
 
 ## ✨ Features
 
