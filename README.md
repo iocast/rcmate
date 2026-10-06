@@ -1,5 +1,7 @@
 # rcmate
 
+![rcmate TUI showing a list of sync pairs](docs/screenshot.png)
+
 **Your Friendly Rclone Companion**
 
 A Terminal User Interface (TUI) for automating, monitoring, and managing [rclone](https://rclone.org/) synchronization tasks.
