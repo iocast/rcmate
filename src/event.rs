@@ -321,10 +321,11 @@ impl FileEntry {
 
     /// Per-direction icons for a two-way file, e.g. "✓→ ○←" (only the forward
     /// copy did anything; ○ means the reverse direction never needed to act,
-    /// not that it's missing). Empty for genuinely one-way syncs.
+    /// not that it's missing). One-way syncs only ever move source ->
+    /// destination, so they show just the forward side, e.g. "✓→".
     pub fn direction_icons(&self) -> String {
         if !self.bidirectional {
-            return String::new();
+            return format!("{}{}", self.forward.icon(), Direction::Forward.arrow());
         }
         format!(
             "{}{} {}{}",

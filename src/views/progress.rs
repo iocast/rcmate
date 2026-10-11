@@ -139,7 +139,7 @@ impl ProgressView {
         // "Sides" replaces the old raw "Direction" (srcFs -> dstFs) column: for
         // bisync files it shows a ✓/…/✗/○ icon per direction (→ then ←) so you
         // can see e.g. "✓→ …←" (forward already checked, reverse in progress).
-        // One-way syncs leave it blank since there's only one direction anyway.
+        // One-way syncs show only the forward side, e.g. "✓→".
         let header_row = Row::new(vec![
             Cell::from("File"),
             Cell::from("Sides"),
