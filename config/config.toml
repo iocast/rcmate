@@ -19,3 +19,22 @@ name = "Test copy"
 type = "copy"
 source = "~/a/x.tmp"
 destination = "~/b"
+
+# Exact mirror: files deleted from the source are deleted from the destination.
+[[sync_pairs]]
+name = "backup: michel"
+type = "sync"
+source = "~/mnt/ganymede/michel"
+destination = "/run/media/michel/stranger/michel"
+
+# Single file kept in step on both sides. Changes on both sides since the last
+# run are kept as keys-private.kdbx.conflict1/.conflict2 instead of overwritten.
+# First run: set resync = true, run once, then set it back to false.
+[[sync_pairs]]
+name = "keepass"
+type = "bisync"
+source = "~/keys-private.kdbx"
+destination = "~/mnt/ganymede/michel"
+
+[sync_pairs.options]
+resync = false
