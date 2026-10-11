@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-11
+
 ### Added
 - `rcmate self-update` checks GitHub for a newer release, shows the release notes of every version since the installed one, and replaces the binary after confirmation. Pre-releases are skipped; Linux x86_64, macOS and Windows x86_64 are supported.
 
@@ -68,7 +70,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Automated cross-platform CI/CD pipeline (Linux, macOS, Windows) via GitHub Actions.
 - Project is dual-licensed under MIT and Apache-2.0.
 
-[unreleased]: https://github.com/iocast/rcmate/compare/v0.2.3...HEAD
+[unreleased]: https://github.com/iocast/rcmate/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/iocast/rcmate/compare/v0.2.3...v0.3.0
 [0.2.3]: https://github.com/iocast/rcmate/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/iocast/rcmate/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/iocast/rcmate/compare/v0.2.0...v0.2.1
