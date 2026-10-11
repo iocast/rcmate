@@ -19,3 +19,22 @@ name = "Test copy"
 type = "copy"
 source = "~/a/x.tmp"
 destination = "~/b"
+
+# Exact mirror: files deleted from the source are deleted from the destination.
+[[sync_pairs]]
+name = "Home backup"
+type = "sync"
+source = "~/mnt/nas/home"
+destination = "/run/media/user/backup-drive/home"
+
+# Single file kept in step on both sides. Changes on both sides since the last
+# run are kept as passwords.kdbx.conflict1/.conflict2 instead of overwritten.
+# First run: set resync = true, run once, then set it back to false.
+[[sync_pairs]]
+name = "keepass"
+type = "bisync"
+source = "~/passwords.kdbx"
+destination = "~/mnt/nas/home"
+
+[sync_pairs.options]
+resync = false

@@ -175,6 +175,41 @@ jobs. There are no source directories to mirror in that case, so
 `create_empty_src_dirs` does not apply: the popup does not offer it, it is not
 sent to rclone, and it is not written to the config file for that pair.
 
+### Choosing a sync type
+
+| Type     | Direction  | Deletes                                         | Use for                                  |
+| -------- | ---------- | ----------------------------------------------- | ---------------------------------------- |
+| `sync`   | one-way    | on the destination, to match the source         | an exact mirror / backup                 |
+| `copy`   | one-way    | never                                           | a backup that keeps deleted files        |
+| `move`   | one-way    | on the source, after transferring               | moving files off a source                |
+| `bisync` | two-way    | on either side, mirroring deletions             | keeping two places in step               |
+
+**`sync` mirrors.** The destination is made identical to the source, so a file
+deleted on the source is deleted from the destination on the next run. If the
+source is a mount point that is not mounted, it looks like an empty directory
+and `sync` empties the destination to match. Check that both sides are mounted,
+or use an rclone remote (e.g. `nas:/home/user`), which fails when
+unreachable instead of looking empty. Run once with `dry_run` first.
+
+**Single file: `sync` vs. `bisync`.** For a single file, `sync` is not a
+mirror: it runs two opposite `copy --update` jobs, so the newer side
+overwrites the older one. If the file changed on both sides since the last
+run, the older side's changes are lost silently. `bisync` detects that case
+and keeps both versions as `<file>.conflict1` and `<file>.conflict2` for you
+to merge. For files where every change matters, such as a KeePass database,
+use `bisync`.
+
+**`bisync` needs a resync on its first run** to build the baseline listings it
+compares against (stored in the rclone `workdir`):
+
+1. Open the pair's Options (`o`), enable `resync` (and `dry_run` to preview).
+2. Run the pair (`CTRL+s`).
+3. Disable `resync` again. Left on, every run re-baselines and skips conflict
+   detection.
+
+A resync is also needed after changing the pair's paths or filters; rclone
+reports this, and the error popup (`ALT+e`) offers `o` to open the Options.
+
 ## 📖 TUI Keybindings
 
 - `↑` / `↓`: Move selection up/down
