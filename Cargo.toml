@@ -36,6 +36,9 @@ tracing = "0.1.44"
 tracing-appender = "0.2.5"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 uuid = { version = "1.27.0", features = ["v4"] }
+semver = "1.0.28"
+self-replace = "1.5.0"
+tempfile = "3.27.0"
 
 
 # Read the optimization guideline for more details: https://ratatui.rs/recipes/apps/release-your-app/#optimizations

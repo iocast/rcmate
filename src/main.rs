@@ -5,7 +5,7 @@
 // This file may not be copied, modified, or distributed except according to those terms.
 
 use chrono::Local;
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use color_eyre::Result;
 use color_eyre::eyre::eyre;
 use crossterm::style::Stylize;
@@ -20,6 +20,7 @@ pub mod app;
 pub mod config;
 pub mod event;
 pub mod rclone_request;
+pub mod self_update;
 pub mod tui;
 pub mod views;
 
@@ -34,6 +35,9 @@ use crate::app::App;
     disable_version_flag = true // Disable default -V so we can use -v
 )]
 struct Args {
+    #[command(subcommand)]
+    command: Option<Command>,
+
     #[arg(long, default_value = "~/.config/rcmate/config.toml")]
     config: PathBuf,
 
@@ -64,12 +68,22 @@ struct Args {
     rclone_config: Option<PathBuf>,
 }
 
+#[derive(Subcommand, Debug)]
+enum Command {
+    /// Check GitHub for a newer release and, after confirmation, replace this binary
+    SelfUpdate,
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // Install the default panic and error report hooks
     color_eyre::install()?;
 
     let args = Args::parse();
+
+    if let Some(Command::SelfUpdate) = args.command {
+        return self_update::run().await;
+    }
 
     let config_path = app::expand_tilde(args.config.clone());
 
