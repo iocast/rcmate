@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-11
+
+### Added
+- Dragging a file or folder onto the terminal fills in its path in the sync pair form (Source, Destination) and the settings form (all path fields), replacing the field's value. Quoted, backslash-escaped and `file://` paths are cleaned up; other fields paste the text at the cursor. Not available on Windows, where crossterm delivers pastes as individual key presses.
+
+### Changed
+- Pasting text outside a form is ignored; previously each pasted character was handled as a key press and could trigger hotkeys such as `q` or `d` (Linux and macOS).
+
+### Fixed
+- In the progress view (`p`), files on large syncs no longer stay stuck at "Transferring" after the job finishes, and files rclone reported as failed show an error instead of "Transferred".
+
 ## [0.3.1] - 2026-10-11
 
 ### Changed
@@ -75,7 +86,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Automated cross-platform CI/CD pipeline (Linux, macOS, Windows) via GitHub Actions.
 - Project is dual-licensed under MIT and Apache-2.0.
 
-[unreleased]: https://github.com/iocast/rcmate/compare/v0.3.1...HEAD
+[unreleased]: https://github.com/iocast/rcmate/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/iocast/rcmate/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/iocast/rcmate/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/iocast/rcmate/compare/v0.2.3...v0.3.0
 [0.2.3]: https://github.com/iocast/rcmate/compare/v0.2.2...v0.2.3
