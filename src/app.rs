@@ -120,8 +120,12 @@ impl App {
     }
 
     pub fn from_file(path: &Path) -> Result<Self> {
+        // No config yet (first run): start empty; save_config creates the file
+        // the first time a sync pair or setting is saved from the TUI.
         if !path.exists() {
-            return Err(eyre!("Config file does not exist: {}", path.display()));
+            let mut app = App::default();
+            app.config_path = path.to_path_buf();
+            return Ok(app);
         }
         let content = fs::read_to_string(path);
         let config: Config = match content {
@@ -478,7 +482,10 @@ impl App {
         };
 
         let toml_str = toml::to_string_pretty(&config)?;
-        std::fs::write(&self.config_path, toml_str)?;
+        if let Some(parent) = self.config_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(&self.config_path, toml_str)?;
         Ok(())
     }
 }
