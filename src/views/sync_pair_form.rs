@@ -241,6 +241,23 @@ impl SyncPairFormView {
         }
     }
 
+    /// Handles a bracketed paste, which is also how terminals deliver a
+    /// file/folder dropped onto the window. Source and Destination take the
+    /// dropped path as their whole value; other fields insert at the cursor.
+    pub fn handle_paste(&mut self, text: &str) {
+        if self.type_dropdown_open || self.active_field == 1 {
+            return;
+        }
+        if matches!(self.active_field, 2 | 3) {
+            *self.get_active_input() = Input::new(crate::views::parse_dropped_path(text));
+        } else {
+            let input = self.get_active_input();
+            text.chars()
+                .filter(|c| !c.is_control())
+                .for_each(|c| input.insert_char(c));
+        }
+    }
+
     fn get_active_input(&mut self) -> &mut Input {
         match self.active_field {
             0 => &mut self.name,

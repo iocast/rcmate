@@ -204,6 +204,10 @@ impl App {
                     {
                         self.handle_key_events(key_event)?
                     }
+                    crossterm::event::Event::Paste(text) => match &mut self.popup {
+                        Some(popup) => popup.handle_paste(&text),
+                        None => self.active_view.handle_paste(&text),
+                    },
                     _ => {}
                 },
                 Event::App(app_event) => match app_event {
