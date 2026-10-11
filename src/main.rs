@@ -71,8 +71,7 @@ async fn main() -> Result<()> {
 
     let args = Args::parse();
 
-    // load config file
-    let app = App::from_file(&app::expand_tilde(args.config))?;
+    let config_path = app::expand_tilde(args.config.clone());
 
     // -------------------------------------------------
     // Handle -v / --version flag
@@ -90,10 +89,9 @@ async fn main() -> Result<()> {
         );
         println!();
 
-        let rclone_bin = {
-            let rclone = app.rclone.read().await;
-            rclone.bin.clone()
-        };
+        // The run path always overrides rclone.bin with --rclone, so mirror that here
+        // instead of requiring a config file just to print the version.
+        let rclone_bin = args.rclone.clone();
 
         let output = tokio::process::Command::new(&rclone_bin)
             .arg("version")
@@ -131,8 +129,11 @@ async fn main() -> Result<()> {
         println!(
             "{}{}",
             "config path:      ".white().bold(),
-            app.config_path.display().to_string().dark_grey()
+            config_path.display().to_string().dark_grey()
         );
+        if !config_path.exists() {
+            println!("{}", "                  (not found)".dark_grey());
+        }
         println!();
 
         // Tagline (DarkGrey)
@@ -140,6 +141,10 @@ async fn main() -> Result<()> {
 
         return Ok(());
     }
+
+    // -------------------------------------------------
+    // load config file
+    let app = App::from_file(&config_path)?;
 
     // -------------------------------------------------
     // set/overwrite config values from args
