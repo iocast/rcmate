@@ -67,6 +67,14 @@ cargo run -- --config ~/.local/state/rcmate/config.toml
 - `--log-level <LEVEL>`: Log level (`trace`, `debug`, `info`, `warn`, `error`). Default: `info`.
 - `-v, --version`: Print version information and exit.
 
+### Updating
+
+```zsh
+rcmate self-update
+```
+
+Checks the GitHub releases for a newer version, shows the release notes of every version since the installed one, and replaces the running binary only after you confirm. Pre-releases are ignored. If the binary sits in a system directory such as `/usr/local/bin`, run it with `sudo`.
+
 ## 🚀 Building and Releasing
 
 Binaries for Linux, macOS, and Windows are automatically compiled and published using GitHub Actions.

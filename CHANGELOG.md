@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- `rcmate self-update` checks GitHub for a newer release, shows the release notes of every version since the installed one, and replaces the binary after confirmation. Pre-releases are skipped; Linux x86_64, macOS and Windows x86_64 are supported.
+
 ## [0.2.3] - 2026-10-11
 
 ### Fixed
