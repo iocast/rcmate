@@ -208,6 +208,16 @@ impl SettingsFormView {
         }
     }
 
+    /// Handles a bracketed paste, which is also how terminals deliver a
+    /// file/folder dropped onto the window. Every text field here is a path,
+    /// so the dropped path replaces the field's value.
+    pub fn handle_paste(&mut self, text: &str) {
+        if self.level_dropdown_open || self.active_field == 1 {
+            return;
+        }
+        *self.get_active_input() = Input::new(crate::views::parse_dropped_path(text));
+    }
+
     fn get_active_input(&mut self) -> &mut Input {
         match self.active_field {
             0 => &mut self.log_path,

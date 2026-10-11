@@ -216,8 +216,15 @@ async fn main() -> Result<()> {
     // run app
     // if args.tui {
     let terminal = ratatui::init();
-    let _result = app.run(terminal).await?;
+    // Bracketed paste delivers pasted text - and paths dragged onto the
+    // terminal window - as one Paste event instead of a burst of key
+    // presses that would trigger hotkeys. Not every terminal supports it,
+    // so failing to enable it isn't fatal.
+    let _ = crossterm::execute!(std::io::stdout(), crossterm::event::EnableBracketedPaste);
+    let result = app.run(terminal).await;
+    let _ = crossterm::execute!(std::io::stdout(), crossterm::event::DisableBracketedPaste);
     ratatui::restore();
+    result?;
     // } else {
     //     let _ = app.sync().await;
     // }

@@ -77,6 +77,17 @@ impl View {
         }
     }
 
+    /// Pasted text (including drag & dropped paths); only forms with text
+    /// inputs use it, everywhere else it's ignored so a stray paste can't
+    /// fire hotkeys.
+    pub fn handle_paste(&mut self, text: &str) {
+        match self {
+            View::SyncPairForm(v) => v.handle_paste(text),
+            View::SettingsForm(v) => v.handle_paste(text),
+            _ => {}
+        }
+    }
+
     pub fn render(&self, area: Rect, buf: &mut Buffer, app: &App) {
         match self {
             View::Main(v) => v.render(area, buf, app),
