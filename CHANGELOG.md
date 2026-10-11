@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-10-11
+
+### Fixed
+- `rcmate --version` no longer fails when the config file does not exist. The rclone binary it reports now comes from `--rclone`, the same binary a normal run uses, and a missing config path is marked `(not found)`.
+- The first run no longer fails when `~/.config/rcmate/config.toml` (or the `--config` path) does not exist. rcmate starts with an empty default config and creates the file, including its directory, the first time a sync pair or setting is saved in the TUI.
+
 ## [0.2.2] - 2026-10-04
 
 ### Changed
@@ -59,6 +65,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Automated cross-platform CI/CD pipeline (Linux, macOS, Windows) via GitHub Actions.
 - Project is dual-licensed under MIT and Apache-2.0.
 
-[unreleased]: https://github.com/iocast/rcmate/compare/v0.2.2...HEAD
+[unreleased]: https://github.com/iocast/rcmate/compare/v0.2.3...HEAD
+[0.2.3]: https://github.com/iocast/rcmate/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/iocast/rcmate/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/iocast/rcmate/compare/v0.2.0...v0.2.1
