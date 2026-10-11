@@ -13,7 +13,7 @@ use color_eyre::{Result, eyre::Context, eyre::eyre};
 use ratatui::DefaultTerminal;
 use reqwest;
 use serde_json;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -238,6 +238,23 @@ impl App {
                         entry.bidirectional = entry.bidirectional || state.bidirectional;
                         entry.apply(t);
                     }
+
+                    // Anything still shown as active but absent from this
+                    // poll's in-progress list has finished; its completion
+                    // report may have been pruned from core/transferred
+                    // before we saw it, so settle it here.
+                    let active: HashSet<(&str, Direction)> = state
+                        .transferring
+                        .iter()
+                        .map(|t| (t.name.as_str(), t.direction))
+                        .collect();
+                    for entry in files.values_mut() {
+                        for dir in [Direction::Forward, Direction::Reverse] {
+                            if !active.contains(&(entry.name.as_str(), dir)) {
+                                entry.settle(dir);
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -304,6 +321,24 @@ impl App {
                 }
                 ProgressState::Error(t) => {
                     s.status = SyncStatus::Error;
+                    // Rows can already have been settled as "Transferred"
+                    // after their report was pruned from core/transferred, so
+                    // flag the files named in the job's error log instead.
+                    if let Some(files) = self.file_progress.write().await.get_mut(&t.key) {
+                        for line in t.msg.lines() {
+                            let Some((_, "ERROR", msg)) =
+                                crate::views::error::parse_log_line(line)
+                            else {
+                                continue;
+                            };
+                            if let Some(entry) = msg
+                                .split_once(": ")
+                                .and_then(|(name, _)| files.get_mut(name))
+                            {
+                                entry.mark_error();
+                            }
+                        }
+                    }
                     s.sync_state.messages.push(t.msg);
                 }
             }

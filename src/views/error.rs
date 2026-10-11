@@ -261,7 +261,7 @@ impl ErrorView {
 /// Splits an rclone log line into (`12:20:41`, `ERROR`, `msg`). rclone writes
 /// the level as `%-6s: `, so it's `ERROR : msg` but `NOTICE: msg`, and the
 /// time may carry microseconds (`12:20:41.123456`) with `--log-format microseconds`.
-fn parse_log_line(line: &str) -> Option<(&str, &str, &str)> {
+pub(crate) fn parse_log_line(line: &str) -> Option<(&str, &str, &str)> {
     let b = line.as_bytes();
     let is_stamp = b.len() > 20
         && b[4] == b'/'

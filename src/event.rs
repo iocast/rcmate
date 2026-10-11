@@ -264,6 +264,56 @@ impl FileEntry {
         }
     }
 
+    /// Settle a direction that was still active ("Transferring"/"Checking")
+    /// but is no longer in rclone's in-progress list. rclone only keeps the
+    /// last ~100 completed transfers in `core/transferred`, so on a busy sync
+    /// a file can finish and be pruned between two polls without rcmate ever
+    /// seeing its terminal report - it would then sit at "Transferring 91%"
+    /// forever, even after the job finished successfully.
+    pub fn settle(&mut self, direction: Direction) {
+        let progress = match direction {
+            Direction::Forward => &self.forward,
+            Direction::Reverse => &self.reverse,
+        };
+        let status = match progress.status.as_str() {
+            "Transferring" => "Transferred",
+            "Checking" => "Checked",
+            _ => return,
+        };
+        let bytes = if status == "Transferred" {
+            progress.size.max(progress.bytes)
+        } else {
+            0
+        };
+        let info = FileTransferInfo {
+            name: self.name.clone(),
+            size: progress.size,
+            bytes,
+            percentage: 100,
+            status: status.to_string(),
+            direction,
+            ..Default::default()
+        };
+        self.apply(&info);
+    }
+
+    /// Flag this file as failed from an `ERROR : <name>: ...` line in the
+    /// job's log, which doesn't say which direction failed. Pin it on the
+    /// reverse side only if that's the only side that ever reported.
+    pub fn mark_error(&mut self) {
+        let direction = if self.reverse.touched && !self.forward.touched {
+            Direction::Reverse
+        } else {
+            Direction::Forward
+        };
+        self.apply(&FileTransferInfo {
+            name: self.name.clone(),
+            status: "Error".to_string(),
+            direction,
+            ..Default::default()
+        });
+    }
+
     /// A single status label to show in the main file list.
     /// While one direction is active it's shown with an arrow, e.g. "Checking ←".
     /// Once settled, a two-way file still shows which direction actually did
@@ -429,5 +479,46 @@ impl EventTask {
     /// Sends an event to the receiver.
     fn send(&self, event: Event) {
         let _ = self.sender.send(event);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn transferring(name: &str, bytes: i64) -> FileTransferInfo {
+        FileTransferInfo {
+            name: name.to_string(),
+            size: 100,
+            bytes,
+            percentage: bytes as u8,
+            status: "Transferring".to_string(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn settle_completes_a_pruned_transfer() {
+        let mut entry = FileEntry {
+            name: "a.pdf".to_string(),
+            ..Default::default()
+        };
+        entry.apply(&transferring("a.pdf", 91));
+        entry.settle(Direction::Forward);
+        assert_eq!(entry.forward.status, "Transferred");
+        assert_eq!(entry.forward.percentage, 100);
+        assert!(entry.is_settled());
+    }
+
+    #[test]
+    fn error_overrides_a_settled_transfer() {
+        let mut entry = FileEntry {
+            name: "a.pdf".to_string(),
+            ..Default::default()
+        };
+        entry.apply(&transferring("a.pdf", 91));
+        entry.settle(Direction::Forward);
+        entry.mark_error();
+        assert_eq!(entry.combined_status(), "Error");
     }
 }
