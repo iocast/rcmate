@@ -1,0 +1,213 @@
+{% extends "base.html" %}
+
+{% block content %}
+<!-- ============================== HERO ============================== -->
+<section class="hero" id="hero" data-parallax-scope>
+  <div class="hero__bg" aria-hidden="true">
+    <div class="layer layer--grid" data-depth="0.12"></div>
+    <div class="layer blob blob--1" data-depth="0.35" data-mouse="0.6"></div>
+    <div class="layer blob blob--2" data-depth="0.55" data-mouse="-0.9"></div>
+    <div class="layer blob blob--3" data-depth="0.25" data-mouse="0.4"></div>
+    <div class="layer shapes" data-depth="0.75" data-mouse="1.4">
+      <span class="shape shape--ring"></span>
+      <span class="shape shape--square"></span>
+      <span class="shape shape--dot shape--d1"></span>
+      <span class="shape shape--dot shape--d2"></span>
+      <span class="shape shape--plus"></span>
+    </div>
+  </div>
+
+  <div class="container hero__grid">
+    <div class="hero__copy" data-depth="-0.12">
+      <a class="pill reveal" href="{{ config.extra.repo_url }}/releases" target="_blank" rel="noopener">
+        <span class="pill__dot"></span>
+        <span data-gh-release>Terminal UI for rclone</span>
+        <span class="pill__arrow" aria-hidden="true">→</span>
+      </a>
+      <h1 class="hero__title reveal">{{ config.extra.hero_title_html | safe }}</h1>
+      <p class="hero__lead reveal">{{ config.extra.hero_lead }}</p>
+      <div class="hero__cta reveal">
+        <a class="btn btn--primary" href="#quickstart">Get started</a>
+        <a class="btn btn--ghost" href="{{ config.extra.repo_url }}/releases" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 3v12m0 0-4.5-4.5M12 15l4.5-4.5M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+          Download
+        </a>
+      </div>
+    </div>
+
+    <div class="hero__visual" data-depth="0.08" data-mouse="-0.5">
+      <!-- Illustrative TUI mockup -->
+      <div class="window tui reveal" role="img" aria-label="Illustration of the rcmate terminal user interface with sync pairs and progress bars">
+        <div class="window__bar">
+          <span class="window__dot"></span><span class="window__dot"></span><span class="window__dot"></span>
+          <em>rcmate</em>
+        </div>
+        <div class="tui__body">
+          <div class="tui__box">
+            <span class="tui__title">Sync pairs</span>
+            {% for p in config.extra.demo_pairs %}
+            <div class="tui__row{% if loop.index == 2 %} is-highlight{% endif %}">
+              <span class="tui__check">{% if p.selected %}[x]{% else %}[ ]{% endif %}</span>
+              <span class="tui__name">{{ p.name }}</span>
+              <span class="tui__type tui__type--{{ p.type }}">{{ p.type }}</span>
+              <span class="tui__bar tui__bar--{{ p.state }}"><i style="--p: {{ p.progress }}%"></i></span>
+              <span class="tui__state tui__state--{{ p.state }}">{% if p.state == "done" %}✓ done{% elif p.state == "running" %}{{ p.progress }}%{% elif p.state == "error" %}✗ error{% else %}idle{% endif %}</span>
+            </div>
+            {% endfor %}
+          </div>
+          <div class="tui__keys">
+            <span><b>Space</b> select</span><span><b>^S</b> sync</span><span><b>o</b> options</span><span><b>p</b> progress</span><span><b>q</b> quit</span>
+          </div>
+        </div>
+      </div>
+      <div class="float-card float-card--a reveal">
+        <span class="float-card__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M3 12h4l3-8 4 16 3-8h4"/></svg></span>
+        <div><strong>Live stats</strong><small>via rclone RC API</small></div>
+      </div>
+      <div class="float-card float-card--b reveal">
+        <span class="float-card__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="m12 2 2.9 6.6 7.1.6-5.4 4.7 1.6 7L12 17.3 5.8 21l1.6-7L2 9.2l7.1-.6L12 2Z"/></svg></span>
+        <div><strong data-gh-stars>–</strong><small>GitHub stars</small></div>
+      </div>
+    </div>
+  </div>
+
+  <a class="hero__scroll" href="#features" aria-label="Scroll to features"><span></span></a>
+</section>
+
+<!-- ============================ FEATURES ============================ -->
+<section class="section" id="features">
+  <div class="container">
+    <header class="section__head reveal">
+      <span class="eyebrow">Features</span>
+      <h2>rclone, with a friendly face.</h2>
+      <p>{{ config.description }}</p>
+    </header>
+
+    <div class="features">
+      {% for f in config.extra.features %}
+      <article class="card reveal" style="--i: {{ loop.index }}">
+        <div class="card__icon">
+          {% if f.icon == "terminal" %}<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/></svg>
+          {% elif f.icon == "modes" %}<svg viewBox="0 0 24 24"><path d="M4 8h13l-3-3M20 16H7l3 3"/></svg>
+          {% elif f.icon == "activity" %}<svg viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>
+          {% elif f.icon == "file" %}<svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z"/><path d="M14 3v5h5M9 14h6M9 17h4"/></svg>
+          {% elif f.icon == "settings" %}<svg viewBox="0 0 24 24"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>
+          {% else %}<svg viewBox="0 0 24 24"><path d="M9 6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6Z"/></svg>
+          {% endif %}
+        </div>
+        <h3>{{ f.title }}</h3>
+        <p>{{ f.text }}</p>
+      </article>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<!-- ======================= SYNC MODES + CONFIG ======================= -->
+<section class="section" id="config">
+  <div class="container split">
+    <div>
+      <header class="section__head section__head--left reveal">
+        <span class="eyebrow">Configuration</span>
+        <h2>One TOML file. Every sync pair.</h2>
+        <p>Define sync pairs, paths and filters in <code class="inline">~/.config/rcmate/config.toml</code>. Options are stored per pair and written back by the Options popup.</p>
+      </header>
+      <ul class="modes">
+        {% for m in config.extra.modes %}
+        <li class="mode reveal" style="--i: {{ loop.index }}">
+          <span class="tui__type tui__type--{{ m.name }}">{{ m.name }}</span>
+          <span>{{ m.text }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+      <a class="link-more reveal" href="{{ get_url(path="@/docs/configuration.md") }}">Full configuration reference →</a>
+    </div>
+
+    <div class="window reveal" data-depth="0.06">
+      <div class="window__bar">
+        <span class="window__dot"></span><span class="window__dot"></span><span class="window__dot"></span>
+        <em>config.toml</em>
+      </div>
+<pre class="window__body toml"><code><span class="c">[general]</span>
+<span class="k">log_path</span> = <span class="s">"~/.local/state/rcmate/logs"</span>
+<span class="k">log_level</span> = <span class="s">"info"</span>
+
+<span class="c">[rclone]</span>
+<span class="k">bin</span> = <span class="s">"rclone"</span>
+
+<span class="c">[[sync_pairs]]</span>
+<span class="k">name</span> = <span class="s">"Documents Sync"</span>
+<span class="k">type</span> = <span class="s">"bisync"</span>
+<span class="k">source</span> = <span class="s">"/local/documents"</span>
+<span class="k">destination</span> = <span class="s">"remote:documents"</span>
+
+<span class="c">[sync_pairs.options]</span>
+<span class="k">dry_run</span> = <span class="b">false</span>
+<span class="k">resync_mode</span> = <span class="s">"none"</span></code></pre>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ QUICK START ========================== -->
+<section class="section section--alt" id="quickstart">
+  <div class="container quickstart">
+    <header class="section__head section__head--left reveal">
+      <span class="eyebrow">Quick start</span>
+      <h2>Up and running in minutes.</h2>
+      <p>You need <a href="https://rclone.org/" target="_blank" rel="noopener">rclone</a> and a Rust toolchain. Prebuilt binaries for Linux, macOS and Windows are on the <a href="{{ config.extra.repo_url }}/releases" target="_blank" rel="noopener">releases page</a>. Details in the <a href="{{ get_url(path="@/docs/getting-started.md") }}">getting started guide</a>.</p>
+    </header>
+
+    <ol class="steps">
+      {% for s in config.extra.quickstart %}
+      <li class="step reveal">
+        <span class="step__num">{{ loop.index }}</span>
+        <div class="step__body">
+          <h3>{{ s.title }}</h3>
+          <p>{{ s.text }}</p>
+          <div class="code">
+            <code>{{ s.code }}</code>
+            <button class="code__copy" type="button" data-copy aria-label="Copy command">Copy</button>
+          </div>
+        </div>
+      </li>
+      {% endfor %}
+    </ol>
+  </div>
+</section>
+
+<!-- ============================ KEYBINDINGS ========================== -->
+<section class="section" id="keys">
+  <div class="container">
+    <header class="section__head reveal">
+      <span class="eyebrow">Keyboard first</span>
+      <h2>Your hands never leave the keys.</h2>
+      <p>Select pairs, start syncs, tweak options and inspect errors without touching the mouse.</p>
+    </header>
+    <div class="keys">
+      {% for k in config.extra.shortcuts %}
+      <div class="key reveal" style="--i: {{ loop.index }}">
+        <span class="key__combo">{% for c in k.combo %}<kbd>{{ c }}</kbd>{% endfor %}</span>
+        <span class="key__text">{{ k.text }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    <p class="center reveal"><a class="link-more" href="{{ get_url(path="@/docs/keybindings.md") }}">All keybindings →</a></p>
+  </div>
+</section>
+
+<!-- ================================ CTA =============================== -->
+<section class="section">
+  <div class="container">
+    <div class="cta reveal">
+      <div class="cta__text">
+        <h2>Make rclone a joy to use.</h2>
+        <p>Grab a release, read the docs or contribute on GitHub.</p>
+      </div>
+      <div class="cta__actions">
+        <a class="btn btn--light" href="{{ get_url(path="@/docs/_index.md") }}">Read the docs</a>
+        <a class="btn btn--outline-light" href="{{ config.extra.repo_url }}" target="_blank" rel="noopener">View on GitHub</a>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock content %}

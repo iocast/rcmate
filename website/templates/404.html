@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+
+{% block title %}Not found · {{ config.title }}{% endblock title %}
+
+{% block content %}
+<section class="hero hero--404" data-parallax-scope>
+  <div class="hero__bg" aria-hidden="true">
+    <div class="layer layer--grid" data-depth="0.12"></div>
+    <div class="layer blob blob--1" data-depth="0.35" data-mouse="0.6"></div>
+    <div class="layer blob blob--2" data-depth="0.55" data-mouse="-0.9"></div>
+  </div>
+  <div class="container notfound">
+    <p class="notfound__code grad">404</p>
+    <h1>This page drifted away.</h1>
+    <p class="hero__lead">The page you are looking for does not exist or has been moved.</p>
+    <a class="btn btn--primary" href="{{ get_url(path="/") }}">Back to home</a>
+  </div>
+</section>
+{% endblock content %}
