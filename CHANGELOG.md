@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-14
+
+### Added
+- Documentation website at https://iocast.github.io/rcmate with getting started, configuration, CLI and keybinding guides.
+- Release candidates (`vX.Y.Z-rc.N`) are published as GitHub pre-releases for testing. They are never marked as the latest release, and `rcmate self-update` does not offer them.
+
 ## [0.4.0] - 2026-10-11
 
 ### Added
@@ -86,7 +92,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Automated cross-platform CI/CD pipeline (Linux, macOS, Windows) via GitHub Actions.
 - Project is dual-licensed under MIT and Apache-2.0.
 
-[unreleased]: https://github.com/iocast/rcmate/compare/v0.4.0...HEAD
+[unreleased]: https://github.com/iocast/rcmate/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/iocast/rcmate/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/iocast/rcmate/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/iocast/rcmate/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/iocast/rcmate/compare/v0.2.3...v0.3.0
