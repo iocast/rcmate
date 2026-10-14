@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+
+{% block title %}{{ section.title }} · {{ config.title }}{% endblock title %}
+{% block description %}{{ section.description }}{% endblock description %}
+
+{% block content %}
+<section class="page-hero" data-parallax-scope>
+  <div class="page-hero__bg" aria-hidden="true">
+    <div class="layer layer--grid" data-depth="0.15"></div>
+    <div class="layer blob blob--1" data-depth="0.4"></div>
+    <div class="layer blob blob--2" data-depth="0.6"></div>
+  </div>
+  <div class="container page-hero__inner" data-depth="-0.1">
+    <span class="eyebrow reveal">{{ config.title }}</span>
+    <h1 class="reveal">{{ section.title }}</h1>
+    <p class="reveal">{{ section.description }}</p>
+  </div>
+</section>
+
+<section class="section section--tight">
+  <div class="container">
+    <div class="prose prose--intro reveal">{{ section.content | safe }}</div>
+    <div class="doc-cards">
+      {% for p in section.pages %}
+      <a class="card card--link reveal" href="{{ p.permalink }}">
+        <h3>{{ p.title }}</h3>
+        <p>{{ p.description }}</p>
+        <span class="card__more">Read more →</span>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endblock content %}
