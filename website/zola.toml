@@ -1,0 +1,142 @@
+# Zola 0.23+ configuration
+# base_url is overridden in CI by the GitHub Pages URL (see .github/workflows/pages.yml)
+base_url = "https://iocast.github.io/rcmate"
+title = "rcmate"
+description = "rcmate is a Terminal User Interface (TUI) for automating, monitoring and managing rclone synchronization tasks."
+default_language = "en"
+
+[extra]
+repo = "iocast/rcmate"
+repo_url = "https://github.com/iocast/rcmate"
+tagline = "Your friendly rclone companion"
+hero_title_html = "Your friendly rclone companion."
+hero_lead = "A Terminal User Interface for automating, monitoring and managing rclone synchronization tasks. Keyboard-driven, live progress, configured with a simple TOML file."
+copyright = "iocast"
+
+keywords = ["sync", "bisync", "copy", "move", "ratatui", "rclone RC API", "TOML config", "Live progress"]
+
+# Sync pairs shown in the TUI mockup in the hero
+# state = "done" | "running" | "idle" | "error"
+[[extra.demo_pairs]]
+name = "Documents Sync"
+type = "bisync"
+progress = 100
+state = "done"
+selected = true
+
+[[extra.demo_pairs]]
+name = "Media Copy"
+type = "copy"
+progress = 64
+state = "running"
+selected = true
+
+[[extra.demo_pairs]]
+name = "Photos Backup"
+type = "sync"
+progress = 0
+state = "idle"
+selected = false
+
+[[extra.demo_pairs]]
+name = "Archive Move"
+type = "move"
+progress = 0
+state = "error"
+selected = false
+
+# Feature cards (icon = terminal | modes | activity | file | settings | command)
+[[extra.features]]
+icon = "terminal"
+title = "Interactive TUI"
+text = "Built with ratatui for a fast, keyboard-driven terminal experience."
+
+[[extra.features]]
+icon = "modes"
+title = "Multiple sync modes"
+text = "Supports sync, bisync, copy and move operations, per sync pair."
+
+[[extra.features]]
+icon = "activity"
+title = "Real-time progress"
+text = "Connects to the rclone RC (Remote Control) API to display live transfer stats and progress bars."
+
+[[extra.features]]
+icon = "file"
+title = "Smart file handling"
+text = "Single-file operations are automatically translated into directory operations with includes."
+
+[[extra.features]]
+icon = "settings"
+title = "Highly configurable"
+text = "Define sync pairs, paths and filters in a simple TOML configuration file."
+
+[[extra.features]]
+icon = "command"
+title = "CLI overrides"
+text = "Override config paths, the rclone binary and logging levels via command-line arguments."
+
+# Sync modes section
+[[extra.modes]]
+name = "sync"
+text = "Make the destination identical to the source."
+
+[[extra.modes]]
+name = "bisync"
+text = "Two-way synchronization between both paths."
+
+[[extra.modes]]
+name = "copy"
+text = "Copy files from source to destination."
+
+[[extra.modes]]
+name = "move"
+text = "Move files from source to destination."
+
+# Quick start steps
+[[extra.quickstart]]
+title = "Clone the repository"
+text = "Get the latest source from GitHub."
+code = "git clone https://github.com/iocast/rcmate.git && cd rcmate"
+
+[[extra.quickstart]]
+title = "Build"
+text = "The binary ends up in target/release/rcmate (rcmate.exe on Windows)."
+code = "cargo build --release"
+
+[[extra.quickstart]]
+title = "Run"
+text = "Default config path is ~/.config/rcmate/config.toml."
+code = "cargo run -- --config ~/.config/rcmate/config.toml"
+
+# Keybindings shown on the landing page
+[[extra.shortcuts]]
+combo = ["↑", "↓"]
+text = "Move selection"
+[[extra.shortcuts]]
+combo = ["Space"]
+text = "Toggle selection"
+[[extra.shortcuts]]
+combo = ["a"]
+text = "Toggle all pairs"
+[[extra.shortcuts]]
+combo = ["Ctrl", "s"]
+text = "Start sync"
+[[extra.shortcuts]]
+combo = ["Ctrl", "a"]
+text = "Add sync pair"
+[[extra.shortcuts]]
+combo = ["e"]
+text = "Edit pair"
+[[extra.shortcuts]]
+combo = ["o"]
+text = "Pair options"
+[[extra.shortcuts]]
+combo = ["p"]
+text = "Per-file progress"
+[[extra.shortcuts]]
+combo = ["Alt", "e"]
+text = "Show error"
+[[extra.shortcuts]]
+combo = ["q"]
+text = "Quit"

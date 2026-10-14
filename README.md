@@ -9,6 +9,8 @@ A Terminal User Interface (TUI) for automating, monitoring, and managing [rclone
 [![GitHub Release](https://img.shields.io/github/v/release/iocast/rcmate?style=flat-square&color=blue)](https://github.com/iocast/rcmate/releases)
 [![Build Status](https://img.shields.io/github/actions/workflow/status/iocast/rcmate/release.yml?style=flat-square&label=build)](https://github.com/iocast/rcmate/actions)
 
+![rcmate TUI showing a list of sync pairs](docs/screenshot.png)
+
 ## ✨ Features
 
 - **Interactive TUI**: Built with `ratatui` for a fast, keyboard-driven terminal experience.
