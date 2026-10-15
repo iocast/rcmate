@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-10-15
+
+### Fixed
+- The release build works again and publishes the `rcmate-linux`, `rcmate-macos` and `rcmate-windows.exe` binaries that `rcmate self-update` downloads. The 0.4.1 build failed, so 0.4.1 was never published; this release includes its changes (see below).
+
 ## [0.4.1] - 2026-10-14
 
 ### Added
