@@ -57,80 +57,41 @@ jobs:
     strategy:
       matrix:
         include:
-          # Each runner builds the installers of its own OS (features/todo-notes/14-platform.md).
           - os: ubuntu-latest
-            formats: deb,appimage
+            target: x86_64-unknown-linux-gnu
+            artifact_name: ${{ github.event.repository.name }}-linux
           - os: macos-latest
-            formats: app,dmg
+            target: x86_64-apple-darwin
+            artifact_name: ${{ github.event.repository.name }}-macos
           - os: windows-latest
-            formats: nsis,wix
+            target: x86_64-pc-windows-msvc
+            artifact_name: ${{ github.event.repository.name }}-windows.exe
 
     steps:
       - uses: actions/checkout@v6
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
 
-      - name: Install Linux build dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev libgtk-3-dev
+      - name: Build Binary
+        run: cargo build --release --target ${{ matrix.target }}
 
-      - name: Install cargo-packager
-        run: cargo install cargo-packager --locked
-
-      # cargo-packager signs whenever CARGO_PACKAGER_SIGN_PRIVATE_KEY is set,
-      # even to an empty string (a missing secret), and then fails with
-      # "Missing comment in secret key". Only export it when the secret has a
-      # value, without stray whitespace from pasting.
-      - name: Load the updater signing key
+      - name: Prepare Artifact
         shell: bash
-        env:
-          KEY: ${{ secrets.RCMATE_UPDATE_PRIVATE_KEY }}
-          PASSWORD: ${{ secrets.RCMATE_UPDATE_KEY_PASSWORD }}
         run: |
-          KEY="$(printf '%s' "$KEY" | tr -d '[:space:]')"
-          if [ -n "$KEY" ]; then
-            echo "CARGO_PACKAGER_SIGN_PRIVATE_KEY=$KEY" >> "$GITHUB_ENV"
-            echo "CARGO_PACKAGER_SIGN_PRIVATE_KEY_PASSWORD=$PASSWORD" >> "$GITHUB_ENV"
-            echo "Signing installers for the updater."
+          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+            cp target/${{ matrix.target }}/release/${{ github.event.repository.name }}.exe "${{ matrix.artifact_name }}"
           else
-            echo "::warning::RCMATE_UPDATE_PRIVATE_KEY is not set: installers are not signed and this release cannot be offered as an update."
+            cp target/${{ matrix.target }}/release/${{ github.event.repository.name }} "${{ matrix.artifact_name }}"
           fi
 
-      - name: Build installers
-        shell: bash
-        run: |
-          FORMATS="${{ matrix.formats }}"
-          # MSI versions are numeric (x.y.z.w) and cannot carry "-rc.N", so
-          # release candidates ship the setup .exe only on Windows.
-          if [ "${{ needs.validate.outputs.prerelease }}" = "true" ]; then
-            FORMATS="${FORMATS//,wix/}"
-          fi
-          cargo packager --release -p floetask-app --formats "$FORMATS"
-        env:
-          # The AppImage tooling is itself an AppImage; runners have no FUSE.
-          APPIMAGE_EXTRACT_AND_RUN: 1
-          # Compiled into the app: where the updater looks and which key it
-          # trusts (features/todo-notes/14-platform.md §14.2). Without them the build
-          # works but cannot update itself.
-          RCMATE_UPDATE_ENDPOINT: https://github.com/${{ github.repository }}/releases/latest/download/latest.json
-          RCMATE_UPDATE_PUBLIC_KEY: ${{ vars.RCMATE_UPDATE_PUBLIC_KEY }}
-
-      - name: Upload installers
+      - name: Upload Artifact
         uses: actions/upload-artifact@v6
         with:
-          name: installers-${{ matrix.os }}
-          # The .app bundle is a folder; the .dmg carries it for release.
-          path: |
-            target/packages/*.exe
-            target/packages/*.msi
-            target/packages/*.dmg
-            target/packages/*.deb
-            target/packages/*.AppImage
-            target/packages/*.app.tar.gz
-            target/packages/*.sig
+          name: binary-${{ matrix.os }}
+          path: ${{ matrix.artifact_name }}
 
   release:
     name: Publish Release
@@ -155,17 +116,11 @@ jobs:
         with:
           path: artifacts
 
-      # Installed apps read latest.json from the latest release; a release
-      # candidate is never offered as an update.
-      - name: Write the updater manifest
-        if: needs.validate.outputs.prerelease != 'true'
-        run: python3 scripts/update-manifest.py artifacts "$GITHUB_REF_NAME" "$GITHUB_REPOSITORY" release_notes.md artifacts/latest.json
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           body_path: release_notes.md
-          files: artifacts/**/*
+          files: artifacts/**/${{ github.event.repository.name }}*
           prerelease: ${{ needs.validate.outputs.prerelease == 'true' }}
           make_latest: ${{ needs.validate.outputs.prerelease == 'true' && 'false' || 'true' }}
         env:
