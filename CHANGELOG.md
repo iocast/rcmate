@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-17
+
+### Changed
+- `rcmate self-update` only works in the release binaries from GitHub. Builds without the built-in update key (e.g. `cargo install` or `cargo build` from source) stop with a message instead of updating; update those the way you installed them.
+
 ### Security
 - Release binaries are signed with Ed25519 (`<asset>.sig` next to each binary). `rcmate self-update` checks the signature, which covers the asset name and release tag, before replacing the binary; unsigned or mismatched downloads are refused.
 
@@ -100,7 +105,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Automated cross-platform CI/CD pipeline (Linux, macOS, Windows) via GitHub Actions.
 - Project is dual-licensed under MIT and Apache-2.0.
 
-[unreleased]: https://github.com/iocast/rcmate/compare/v0.4.1...HEAD
+[unreleased]: https://github.com/iocast/rcmate/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/iocast/rcmate/compare/v0.4.2...v0.5.0
 [0.4.1]: https://github.com/iocast/rcmate/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/iocast/rcmate/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/iocast/rcmate/compare/v0.3.0...v0.3.1
