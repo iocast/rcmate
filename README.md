@@ -77,46 +77,7 @@ rcmate self-update
 
 Checks the GitHub releases for a newer version, shows the release notes of every version since the installed one, and replaces the running binary only after you confirm. Pre-releases are ignored. If the binary sits in a system directory such as `/usr/local/bin`, run it with `sudo`.
 
-## 🚀 Building and Releasing
-
-Binaries for Linux, macOS, and Windows are automatically compiled and published using GitHub Actions.
-
-### Triggering a Release
-
-The build and release process is automatically triggered when you push a Git tag that starts with `v`.
-
-**Prerequisites:**
-Before creating a tag, ensure the version is consistent across your project files. The workflow will abort the build if it detects a mismatch:
-
-- `Cargo.toml` (the `version` field)
-- `CHANGELOG.md` (the latest version in an H2 header, e.g., `## 1.0.0`)
-
-**Steps to Release:**
-
-1. Update the version in `Cargo.toml` and `CHANGELOG.md`.
-2. Commit and push your changes:
-   ```bash
-   git add Cargo.toml CHANGELOG.md
-   git commit -m "Release v1.0.0"
-   git push
-   ```
-3. Create and push a new Git tag matching the version:
-   ```bash
-   git tag v1.0.0
-   git push origin v1.0.0
-   ```
-
-Once the tag is pushed, the workflow will validate the versions, compile the binaries for all target platforms, and automatically create a GitHub Release with the attached artifacts.
-
-### Manual Trigger
-
-You can also trigger the workflow manually from the GitHub UI:
-
-1. Navigate to the **Actions** tab in your repository.
-2. Select the **Build and Release** workflow from the left sidebar.
-3. Click the **Run workflow** dropdown and select **Run workflow**.
-
-_(Note: Manual triggers still execute the version validation step. Ensure your `Cargo.toml` and `CHANGELOG.md` versions are properly aligned before triggering manually.)_
+Every release binary is signed. Before replacing anything, `self-update` checks the downloaded binary against its `.sig` file with the public key built into rcmate, and that the signature was made for this platform's binary and this release tag. A missing or invalid signature aborts the update.
 
 ## ⚙️ Configuration
 
@@ -241,6 +202,8 @@ Licensed under either of
 at your option.
 
 ## 🤝 Contribution
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for building, releasing and release signing.
 
 Unless you explicitly state otherwise, any contribution intentionally submitted
 for inclusion in the work by you, as defined in the Apache-2.0 license, shall be
