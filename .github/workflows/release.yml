@@ -77,6 +77,9 @@ jobs:
 
       - name: Build Binary
         run: cargo build --release --target ${{ matrix.target }}
+        env:
+          # Compiled in as the key `rcmate self-update` trusts (src/self_update.rs).
+          RCMATE_UPDATE_PUBLIC_KEY: ${{ vars.RCMATE_UPDATE_PUBLIC_KEY }}
 
       - name: Prepare Artifact
         shell: bash
@@ -115,6 +118,35 @@ jobs:
         uses: actions/download-artifact@v6
         with:
           path: artifacts
+
+      # `rcmate self-update` refuses a binary without a valid <asset>.sig: an Ed25519
+      # signature over "<asset> <tag>\n" followed by the binary (src/self_update.rs),
+      # so never publish unsigned.
+      - name: Sign binaries
+        env:
+          KEY: ${{ secrets.RCMATE_UPDATE_PRIVATE_KEY }}
+          EXPECTED_PUBLIC_KEY: ${{ vars.RCMATE_UPDATE_PUBLIC_KEY }}
+        run: |
+          if [ -z "$KEY" ]; then
+            echo "::error::RCMATE_UPDATE_PRIVATE_KEY is not set; self-update would reject this release."
+            exit 1
+          fi
+          KEY_FILE="$RUNNER_TEMP/rcmate-update.pem"
+          printf '%s\n' "$KEY" > "$KEY_FILE"
+          # The binaries trust RCMATE_UPDATE_PUBLIC_KEY, so a secret that does not match it
+          # (or a missing variable) fails here.
+          PUBLIC_KEY="$(openssl pkey -in "$KEY_FILE" -pubout -outform DER | tail -c 32 | od -An -tx1 | tr -d ' \n')"
+          EXPECTED_PUBLIC_KEY="$(printf '%s' "$EXPECTED_PUBLIC_KEY" | tr -d '[:space:]' | tr 'A-F' 'a-f')"
+          if [ "$PUBLIC_KEY" != "$EXPECTED_PUBLIC_KEY" ]; then
+            echo "::error::RCMATE_UPDATE_PRIVATE_KEY does not match the RCMATE_UPDATE_PUBLIC_KEY variable."
+            exit 1
+          fi
+          for f in artifacts/*/${{ github.event.repository.name }}-*; do
+            { printf '%s %s\n' "$(basename "$f")" "$GITHUB_REF_NAME"; cat "$f"; } > "$RUNNER_TEMP/message"
+            openssl pkeyutl -sign -rawin -inkey "$KEY_FILE" -in "$RUNNER_TEMP/message" -out "$f.sig"
+          done
+          rm -f "$KEY_FILE" "$RUNNER_TEMP/message"
+          ls -l artifacts/*
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

@@ -1,13 +1,24 @@
 //! `rcmate self-update`: replaces the running binary with the latest GitHub release.
+//!
+//! Every release asset ships with an Ed25519 signature (`<asset>.sig`, made by
+//! `.github/workflows/release.yml`); the download is only installed when it verifies
+//! against [`PUBLIC_KEY`].
 
 use color_eyre::Result;
 use color_eyre::eyre::{Context, eyre};
 use crossterm::style::Stylize;
+use ed25519_dalek::{Signature, VerifyingKey};
+use signature::Verifier;
 use semver::Version;
 use serde::Deserialize;
 use std::io::{self, Write};
 
 const REPO: &str = "iocast/rcmate";
+
+/// Release signing key as 64 hex digits (the raw 32-byte Ed25519 public key), compiled in
+/// from the `RCMATE_UPDATE_PUBLIC_KEY` Actions variable. Its private half is the
+/// `RCMATE_UPDATE_PRIVATE_KEY` Actions secret. Builds without it cannot self-update.
+const PUBLIC_KEY: Option<&str> = option_env!("RCMATE_UPDATE_PUBLIC_KEY");
 
 #[derive(Deserialize, Debug)]
 struct Release {
@@ -74,6 +85,53 @@ async fn newer_releases(client: &reqwest::Client, current: &Version) -> Result<V
     Ok(newer)
 }
 
+async fn download(client: &reqwest::Client, asset: &Asset) -> Result<Vec<u8>> {
+    let bytes = client
+        .get(&asset.browser_download_url)
+        .send()
+        .await
+        .and_then(|r| r.error_for_status())
+        .with_context(|| format!("Downloading {} failed", asset.name))?
+        .bytes()
+        .await
+        .with_context(|| format!("Downloading {} failed", asset.name))?;
+    if bytes.len() as u64 != asset.size {
+        return Err(eyre!(
+            "Downloaded {} bytes of {}, expected {}; not replacing the binary",
+            bytes.len(),
+            asset.name,
+            asset.size
+        ));
+    }
+    Ok(bytes.to_vec())
+}
+
+/// Checks `bin` against its Ed25519 `signature`. The signed message is `"<asset> <tag>\n"`
+/// followed by the binary, so an older signed binary cannot be passed off as a newer
+/// release or as another platform's asset.
+fn verify(public_key: &[u8; 32], bin: &[u8], signature: &[u8], asset_and_tag: &str) -> Result<()> {
+    let public_key = VerifyingKey::from_bytes(public_key)
+        .map_err(|_| eyre!("The built-in update key is invalid; not replacing the binary"))?;
+    let signature = Signature::from_slice(signature)
+        .map_err(|_| eyre!("Malformed release signature; not replacing the binary"))?;
+    let mut message = format!("{asset_and_tag}\n").into_bytes();
+    message.extend_from_slice(bin);
+    public_key
+        .verify(&message, &signature)
+        .map_err(|_| eyre!("Signature check failed; not replacing the binary"))
+}
+
+fn decode_hex(hex: &str) -> Option<[u8; 32]> {
+    let mut bytes = [0u8; 32];
+    if hex.len() != 64 {
+        return None;
+    }
+    for (byte, pair) in bytes.iter_mut().zip(hex.as_bytes().chunks(2)) {
+        *byte = u8::from_str_radix(std::str::from_utf8(pair).ok()?, 16).ok()?;
+    }
+    Some(bytes)
+}
+
 fn confirm(prompt: &str) -> Result<bool> {
     print!("{prompt} [y/N] ");
     io::stdout().flush()?;
@@ -84,6 +142,9 @@ fn confirm(prompt: &str) -> Result<bool> {
 
 pub async fn run() -> Result<()> {
     let current = Version::parse(env!("CARGO_PKG_VERSION"))?;
+    let public_key = PUBLIC_KEY.map(str::trim).and_then(decode_hex).ok_or_else(|| {
+        eyre!("This build has no update key (e.g. built from source); update it the way you installed it")
+    })?;
     let asset_name = asset_name()?;
     let client = client()?;
 
@@ -119,6 +180,12 @@ pub async fn run() -> Result<()> {
         .iter()
         .find(|a| a.name == asset_name)
         .ok_or_else(|| eyre!("Release {} has no {asset_name} asset", latest.tag_name))?;
+    let sig_name = format!("{asset_name}.sig");
+    let sig_asset = latest
+        .assets
+        .iter()
+        .find(|a| a.name == sig_name)
+        .ok_or_else(|| eyre!("Release {} has no {sig_name} signature; not updating", latest.tag_name))?;
 
     let exe = std::env::current_exe().context("Cannot locate the running rcmate binary")?;
     println!(
@@ -132,23 +199,10 @@ pub async fn run() -> Result<()> {
     }
 
     println!("Downloading {} ({} KiB)...", asset.name, asset.size / 1024);
-    let bytes = client
-        .get(&asset.browser_download_url)
-        .send()
-        .await
-        .context("Download failed")?
-        .error_for_status()
-        .context("Download failed")?
-        .bytes()
-        .await
-        .context("Download failed")?;
-    if bytes.len() as u64 != asset.size {
-        return Err(eyre!(
-            "Downloaded {} bytes, expected {}; not replacing the binary",
-            bytes.len(),
-            asset.size
-        ));
-    }
+    let bytes = download(&client, asset).await?;
+    let signature = download(&client, sig_asset).await?;
+    verify(&public_key, &bytes, &signature, &format!("{asset_name} {}", latest.tag_name))?;
+    println!("{}", "Signature verified.".green());
 
     // Stage next to the target so the final swap stays on one filesystem.
     let dir = exe
@@ -172,4 +226,56 @@ pub async fn run() -> Result<()> {
         latest_version.to_string().yellow().bold()
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // A throwaway OpenSSL key, not the release key; its private half was discarded.
+    // SIGNATURE is `openssl pkeyutl -sign -rawin` over "rcmate-linux v9.9.9\n" + PAYLOAD,
+    // the same command the release workflow runs.
+    const TEST_KEY_HEX: &str = "812de974efadda3f563acbf92d3ee74106d919613e3483408c1503c00b76c0b8";
+    const PAYLOAD: &[u8] = b"rcmate test payload";
+    const SIGNATURE: &str = "29d342cc6a9433dc7022077d911880008f8cc4df7e81c0631bcc0fcf6d4a387d937cb1dfdb206fdec592640e34188306f7d2b1168b3aa75d094de6219a2e3905";
+
+    fn test_key() -> [u8; 32] {
+        decode_hex(TEST_KEY_HEX).unwrap()
+    }
+
+    fn signature() -> Vec<u8> {
+        (0..SIGNATURE.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&SIGNATURE[i..i + 2], 16).unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn accepts_signed_payload() {
+        verify(&test_key(), PAYLOAD, &signature(), "rcmate-linux v9.9.9").unwrap();
+    }
+
+    #[test]
+    fn rejects_tampered_payload() {
+        let tampered = b"rcmate test payloaX";
+        assert!(verify(&test_key(), tampered, &signature(), "rcmate-linux v9.9.9").is_err());
+    }
+
+    #[test]
+    fn rejects_other_asset_or_version() {
+        assert!(verify(&test_key(), PAYLOAD, &signature(), "rcmate-macos v9.9.9").is_err());
+        assert!(verify(&test_key(), PAYLOAD, &signature(), "rcmate-linux v10.0.0").is_err());
+    }
+
+    #[test]
+    fn rejects_garbage_signature() {
+        assert!(verify(&test_key(), PAYLOAD, b"not a signature", "rcmate-linux v9.9.9").is_err());
+    }
+
+    #[test]
+    fn decodes_hex_keys_only() {
+        assert!(decode_hex(TEST_KEY_HEX).is_some());
+        assert!(decode_hex("TODO").is_none());
+        assert!(decode_hex(&"zz".repeat(32)).is_none());
+    }
 }

@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+- Release binaries are signed with Ed25519 (`<asset>.sig` next to each binary). `rcmate self-update` checks the signature, which covers the asset name and release tag, before replacing the binary; unsigned or mismatched downloads are refused.
+
 ## [0.4.2] - 2026-10-15
 
 ### Fixed
