@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-14
+
 ### Added
 - Sort the sync pairs on the main view with `r`. Each press moves to the next order: name A→Z, name Z→A, type, status (errors first). The table title shows the current order, the cursor stays on the same pair, and the new order is saved to the config file.
 - Move the highlighted sync pair up or down with `Shift+↑` / `Shift+↓` to put the pairs in your own order. The new order is saved to the config file.
@@ -109,7 +111,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Automated cross-platform CI/CD pipeline (Linux, macOS, Windows) via GitHub Actions.
 - Project is dual-licensed under MIT and Apache-2.0.
 
-[unreleased]: https://github.com/iocast/rcmate/compare/v0.5.0...HEAD
+[unreleased]: https://github.com/iocast/rcmate/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/iocast/rcmate/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/iocast/rcmate/compare/v0.4.2...v0.5.0
 [0.4.1]: https://github.com/iocast/rcmate/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/iocast/rcmate/compare/v0.3.1...v0.4.0
