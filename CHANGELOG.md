@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-11-14
+
+### Added
+- `rcmate self-update` shows a progress bar with percentage and KiB while it downloads the new binary. The bar only appears in a terminal, so piped or redirected output stays plain.
+
 ## [0.6.0] - 2026-11-14
 
 ### Added
@@ -111,7 +116,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Automated cross-platform CI/CD pipeline (Linux, macOS, Windows) via GitHub Actions.
 - Project is dual-licensed under MIT and Apache-2.0.
 
-[unreleased]: https://github.com/iocast/rcmate/compare/v0.6.0...HEAD
+[unreleased]: https://github.com/iocast/rcmate/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/iocast/rcmate/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/iocast/rcmate/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/iocast/rcmate/compare/v0.4.2...v0.5.0
 [0.4.1]: https://github.com/iocast/rcmate/compare/v0.4.0...v0.4.1
