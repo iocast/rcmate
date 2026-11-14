@@ -9,8 +9,10 @@ weight = 3
 | Key | Action |
 |-----|--------|
 | <kbd>↑</kbd> / <kbd>↓</kbd> | Move selection up/down |
+| <kbd>Shift</kbd>+<kbd>↑</kbd> / <kbd>↓</kbd> | Move the highlighted pair up/down (the order is saved to the config file) |
 | <kbd>Space</kbd> | Toggle selection for sync |
 | <kbd>a</kbd> | Toggle selection for all pairs |
+| <kbd>r</kbd> | Sort the pairs: name A→Z, name Z→A, type, status (cycles; the order is saved to the config file) |
 | <kbd>Ctrl</kbd>+<kbd>s</kbd> | Start synchronization for selected pairs |
 | <kbd>Ctrl</kbd>+<kbd>a</kbd> | Add a new sync pair |
 | <kbd>e</kbd> | Edit the highlighted sync pair |

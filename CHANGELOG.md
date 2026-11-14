@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- Sort the sync pairs on the main view with `r`. Each press moves to the next order: name A→Z, name Z→A, type, status (errors first). The table title shows the current order, the cursor stays on the same pair, and the new order is saved to the config file.
+- Move the highlighted sync pair up or down with `Shift+↑` / `Shift+↓` to put the pairs in your own order. The new order is saved to the config file.
+
 ## [0.5.0] - 2026-10-17
 
 ### Changed

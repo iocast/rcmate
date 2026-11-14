@@ -341,6 +341,9 @@ impl SyncPairFormView {
                 app.sync_pairs_tbl_state.select(Some(index));
             }
         }
+        // A new pair lands at the end and an edit can change name or type,
+        // so the list may no longer be in the order the title claims.
+        app.sort_key = None;
         app.save_config()?;
         Ok(())
     }

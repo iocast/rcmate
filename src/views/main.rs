@@ -18,8 +18,8 @@ pub struct MainView;
 impl MainView {
     pub fn help_text(&self) -> String {
         [
-            "q: quit | ↑/↓: navigate | SPACE: select | a: select all",
-            "CTRL+s: run | p: progress | o: options | S: settings",
+            "q: quit | ↑/↓: navigate | SHIFT+↑/↓: move | SPACE: select | a: select all",
+            "CTRL+s: run | p: progress | o: options | S: settings | r: sort",
             "CTRL+a: add | e: edit | DEL: delete | ALT+e: error | ALT+SHIFT+I: info",
         ]
         .join("\n")
@@ -232,6 +232,10 @@ impl MainView {
                 ViewAction::None
             }
             KeyCode::Delete => self.confirm_delete(app),
+            KeyCode::Char('r') => {
+                app.cycle_sort();
+                ViewAction::None
+            }
             KeyCode::Char('p') => {
                 if let Some(idx) = app.sync_pairs_tbl_state.selected() {
                     let sync_pairs = app.sync_pairs.try_read().unwrap();
@@ -247,6 +251,16 @@ impl MainView {
                 } else {
                     ViewAction::None
                 }
+            }
+            // Must come before the bare Up/Down arms below, which match
+            // any modifiers.
+            KeyCode::Up if key_event.modifiers.contains(KeyModifiers::SHIFT) => {
+                app.move_selected(true);
+                ViewAction::None
+            }
+            KeyCode::Down if key_event.modifiers.contains(KeyModifiers::SHIFT) => {
+                app.move_selected(false);
+                ViewAction::None
             }
             KeyCode::Up => {
                 app.events.send(AppEvent::Previous);
@@ -322,7 +336,10 @@ impl MainView {
             ],
         )
         .header(header)
-        .block(Block::default().borders(Borders::ALL).title("Sync Pairs  "))
+        .block(Block::default().borders(Borders::ALL).title(match app.sort_key {
+            Some(key) => format!("Sync Pairs (sorted by {})  ", key.label()),
+            None => "Sync Pairs  ".to_string(),
+        }))
         .row_highlight_style(
             Style::default()
                 .fg(Color::Cyan)

@@ -36,8 +36,54 @@ pub fn expand_tilde(path: PathBuf) -> PathBuf {
     path
 }
 
+/// The order the main view's sync pairs were last sorted by (`r` cycles
+/// through these). Sorting reorders `App::sync_pairs` itself - and with it
+/// the config file - so the row indices the views hand around stay valid.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SortKey {
+    NameAsc,
+    NameDesc,
+    Type,
+    Status,
+}
+
+impl SortKey {
+    /// The key after `current` in the cycle; nothing sorted yet starts it.
+    pub fn next(current: Option<SortKey>) -> SortKey {
+        match current {
+            None | Some(SortKey::Status) => SortKey::NameAsc,
+            Some(SortKey::NameAsc) => SortKey::NameDesc,
+            Some(SortKey::NameDesc) => SortKey::Type,
+            Some(SortKey::Type) => SortKey::Status,
+        }
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            SortKey::NameAsc => "name ↑",
+            SortKey::NameDesc => "name ↓",
+            SortKey::Type => "type",
+            SortKey::Status => "status",
+        }
+    }
+}
+
+/// Status order for `SortKey::Status`: pairs that need attention first.
+fn status_rank(status: &SyncStatus) -> u8 {
+    match status {
+        SyncStatus::Error => 0,
+        SyncStatus::Syncing => 1,
+        SyncStatus::Queued => 2,
+        SyncStatus::Done => 3,
+        SyncStatus::Idle => 4,
+    }
+}
+
 pub struct App {
     should_quit: bool,
+    /// What the sync pairs were last sorted by in this session, shown in the
+    /// table title. `None` means config file order.
+    pub(crate) sort_key: Option<SortKey>,
     pub(crate) events: EventHandler,
     pub(crate) sync_pairs_tbl_state: ratatui::widgets::TableState,
     pub(crate) active_view: View,
@@ -58,6 +104,7 @@ impl Default for App {
         let c = Config::default();
         App {
             should_quit: false,
+            sort_key: None,
             events: EventHandler::new(),
             sync_pairs_tbl_state: ratatui::widgets::TableState::new(),
             active_view: View::Main(crate::views::main::MainView),
@@ -484,6 +531,100 @@ impl App {
                 while let Some(_) = set.join_next().await {}
             }
         });
+    }
+
+    /// Sorts by the next key in the cycle and saves the new order to the
+    /// config file.
+    pub fn cycle_sort(&mut self) {
+        let key = SortKey::next(self.sort_key);
+        if !self.sort_sync_pairs(key) {
+            return;
+        }
+        if let Err(e) = self.save_config() {
+            error!("Failed to save config after sorting sync pairs: {}", e);
+        }
+    }
+
+    /// Moves the pair under the cursor one row up (`up`) or down and saves
+    /// the new order to the config file.
+    pub fn move_selected(&mut self, up: bool) {
+        if !self.shift_selected(up) {
+            return;
+        }
+        if let Err(e) = self.save_config() {
+            error!("Failed to save config after moving sync pair: {}", e);
+        }
+    }
+
+    /// Swaps the pair under the cursor with its neighbour and moves the
+    /// cursor along with it. Stops at the ends rather than wrapping around.
+    /// Returns `false` if nothing moved.
+    fn shift_selected(&mut self, up: bool) -> bool {
+        let Some(idx) = self.sync_pairs_tbl_state.selected() else {
+            return false;
+        };
+        let Ok(mut sync_pairs) = self.sync_pairs.try_write() else {
+            return false;
+        };
+        let target = if up {
+            idx.checked_sub(1)
+        } else {
+            Some(idx + 1).filter(|&t| t < sync_pairs.len())
+        };
+        let Some(target) = target.filter(|_| idx < sync_pairs.len()) else {
+            return false;
+        };
+        sync_pairs.swap(idx, target);
+        drop(sync_pairs);
+        self.sync_pairs_tbl_state.select(Some(target));
+        // The order is now the user's own, not the last sort's.
+        self.sort_key = None;
+        true
+    }
+
+    /// Reorders the sync pairs by `key`, keeping the cursor on the pair it
+    /// was on. Ties are broken by name, then by previous position (the sort
+    /// is stable). Returns `false`, leaving everything as it was, if a pair
+    /// is locked right now (e.g. mid progress update).
+    fn sort_sync_pairs(&mut self, key: SortKey) -> bool {
+        let Ok(mut sync_pairs) = self.sync_pairs.try_write() else {
+            return false;
+        };
+        let cursor_key = self
+            .sync_pairs_tbl_state
+            .selected()
+            .and_then(|i| sync_pairs.get(i))
+            .and_then(|p| p.try_read().ok().map(|p| p.key));
+
+        let mut entries = Vec::with_capacity(sync_pairs.len());
+        for pair_arc in sync_pairs.iter() {
+            let Ok(pair) = pair_arc.try_read() else {
+                return false;
+            };
+            entries.push((
+                pair.sync_pair.name.to_lowercase(),
+                pair.sync_pair.sync_type.to_string(),
+                status_rank(&pair.status),
+                pair_arc.clone(),
+            ));
+        }
+        entries.sort_by(|a, b| match key {
+            SortKey::NameAsc => a.0.cmp(&b.0),
+            SortKey::NameDesc => b.0.cmp(&a.0),
+            SortKey::Type => a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0)),
+            SortKey::Status => a.2.cmp(&b.2).then_with(|| a.0.cmp(&b.0)),
+        });
+        *sync_pairs = entries.into_iter().map(|e| e.3).collect();
+
+        if let Some(cursor_key) = cursor_key {
+            let idx = sync_pairs
+                .iter()
+                .position(|p| p.try_read().is_ok_and(|p| p.key == cursor_key));
+            self.sync_pairs_tbl_state.select(idx);
+        }
+        drop(sync_pairs);
+        self.sort_key = Some(key);
+        true
     }
 
     pub fn save_config(&self) -> color_eyre::Result<()> {
@@ -1307,5 +1448,166 @@ impl SyncPairConfig {
             .await?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn app_with(pairs: &[(&str, SyncType, SyncStatus)]) -> App {
+        let mut app = App::default();
+        app.sync_pairs = Arc::new(RwLock::new(
+            pairs
+                .iter()
+                .map(|(name, sync_type, status)| {
+                    Arc::new(RwLock::new(SyncPairUi {
+                        key: Uuid::new_v4(),
+                        selected: false,
+                        status: status.clone(),
+                        sync_state: SyncState::default(),
+                        sync_pair: SyncPairConfig {
+                            name: name.to_string(),
+                            sync_type: sync_type.clone(),
+                            source: "/src".to_string(),
+                            destination: "/dst".to_string(),
+                            excludes: None,
+                            includes: None,
+                            filter: None,
+                            options: Default::default(),
+                        },
+                    }))
+                })
+                .collect(),
+        ));
+        app
+    }
+
+    fn names(app: &App) -> Vec<String> {
+        app.sync_pairs
+            .try_read()
+            .unwrap()
+            .iter()
+            .map(|p| p.try_read().unwrap().sync_pair.name.clone())
+            .collect()
+    }
+
+    fn sample() -> App {
+        app_with(&[
+            ("photos", SyncType::Sync, SyncStatus::Done),
+            ("Docs", SyncType::BiSync, SyncStatus::Idle),
+            ("music", SyncType::Copy, SyncStatus::Error),
+            ("archive", SyncType::Sync, SyncStatus::Idle),
+        ])
+    }
+
+    #[test]
+    fn sort_key_cycles_through_all_keys() {
+        let mut key = None;
+        let mut seen = Vec::new();
+        for _ in 0..5 {
+            let next = SortKey::next(key);
+            seen.push(next);
+            key = Some(next);
+        }
+        assert_eq!(
+            seen,
+            vec![
+                SortKey::NameAsc,
+                SortKey::NameDesc,
+                SortKey::Type,
+                SortKey::Status,
+                SortKey::NameAsc
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn sorts_by_name_case_insensitively() {
+        let mut app = sample();
+        assert!(app.sort_sync_pairs(SortKey::NameAsc));
+        assert_eq!(names(&app), ["archive", "Docs", "music", "photos"]);
+        assert!(app.sort_sync_pairs(SortKey::NameDesc));
+        assert_eq!(names(&app), ["photos", "music", "Docs", "archive"]);
+        assert_eq!(app.sort_key, Some(SortKey::NameDesc));
+    }
+
+    #[tokio::test]
+    async fn sorts_by_type_then_name() {
+        let mut app = sample();
+        assert!(app.sort_sync_pairs(SortKey::Type));
+        assert_eq!(names(&app), ["Docs", "music", "archive", "photos"]);
+    }
+
+    #[tokio::test]
+    async fn sorts_by_status_with_errors_first() {
+        let mut app = sample();
+        assert!(app.sort_sync_pairs(SortKey::Status));
+        assert_eq!(names(&app), ["music", "photos", "archive", "Docs"]);
+    }
+
+    /// The cursor follows the pair it was on, so `e`, `o` or DEL right after
+    /// sorting still act on the pair the user was looking at.
+    #[tokio::test]
+    async fn cursor_stays_on_the_same_pair() {
+        let mut app = sample();
+        app.sync_pairs_tbl_state.select(Some(0)); // photos
+        app.sort_sync_pairs(SortKey::NameAsc);
+        assert_eq!(app.sync_pairs_tbl_state.selected(), Some(3));
+    }
+
+    #[tokio::test]
+    async fn sorting_an_empty_list_is_a_no_op() {
+        let mut app = app_with(&[]);
+        assert!(app.sort_sync_pairs(SortKey::NameAsc));
+        assert_eq!(app.sync_pairs_tbl_state.selected(), None);
+    }
+
+    fn idle<'a>(names: &[&'a str]) -> Vec<(&'a str, SyncType, SyncStatus)> {
+        names
+            .iter()
+            .map(|n| (*n, SyncType::Sync, SyncStatus::Idle))
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn moves_the_pair_and_the_cursor_with_it() {
+        let mut app = app_with(&idle(&["a", "b", "c"]));
+        app.sync_pairs_tbl_state.select(Some(1));
+        assert!(app.shift_selected(true));
+        assert_eq!(names(&app), ["b", "a", "c"]);
+        assert_eq!(app.sync_pairs_tbl_state.selected(), Some(0));
+        assert!(app.shift_selected(false));
+        assert!(app.shift_selected(false));
+        assert_eq!(names(&app), ["a", "c", "b"]);
+        assert_eq!(app.sync_pairs_tbl_state.selected(), Some(2));
+    }
+
+    #[tokio::test]
+    async fn stops_at_the_ends() {
+        let mut app = app_with(&idle(&["a", "b"]));
+        app.sync_pairs_tbl_state.select(Some(0));
+        assert!(!app.shift_selected(true));
+        app.sync_pairs_tbl_state.select(Some(1));
+        assert!(!app.shift_selected(false));
+        assert_eq!(names(&app), ["a", "b"]);
+        assert_eq!(app.sync_pairs_tbl_state.selected(), Some(1));
+    }
+
+    #[tokio::test]
+    async fn moving_clears_the_sort_label() {
+        let mut app = app_with(&idle(&["b", "a"]));
+        app.sync_pairs_tbl_state.select(Some(0));
+        app.sort_sync_pairs(SortKey::NameAsc);
+        assert_eq!(app.sort_key, Some(SortKey::NameAsc));
+        assert!(app.shift_selected(true));
+        assert_eq!(app.sort_key, None);
+    }
+
+    #[tokio::test]
+    async fn nothing_to_move_without_a_cursor() {
+        let mut app = app_with(&[]);
+        assert!(!app.shift_selected(true));
+        assert!(!app.shift_selected(false));
     }
 }
