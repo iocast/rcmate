@@ -11,7 +11,7 @@ use ed25519_dalek::{Signature, VerifyingKey};
 use signature::Verifier;
 use semver::Version;
 use serde::Deserialize;
-use std::io::{self, Write};
+use std::io::{self, IsTerminal, Write};
 
 const REPO: &str = "iocast/rcmate";
 
@@ -85,16 +85,29 @@ async fn newer_releases(client: &reqwest::Client, current: &Version) -> Result<V
     Ok(newer)
 }
 
-async fn download(client: &reqwest::Client, asset: &Asset) -> Result<Vec<u8>> {
-    let bytes = client
+/// Downloads `asset`, drawing a progress bar on stdout when `show_progress` is set.
+async fn download(client: &reqwest::Client, asset: &Asset, show_progress: bool) -> Result<Vec<u8>> {
+    let failed = || format!("Downloading {} failed", asset.name);
+    let mut response = client
         .get(&asset.browser_download_url)
         .send()
         .await
         .and_then(|r| r.error_for_status())
-        .with_context(|| format!("Downloading {} failed", asset.name))?
-        .bytes()
-        .await
-        .with_context(|| format!("Downloading {} failed", asset.name))?;
+        .with_context(failed)?;
+
+    let mut bytes = Vec::with_capacity(asset.size as usize);
+    let mut progress = show_progress.then(|| Progress::new(asset.size));
+    while let Some(chunk) = response.chunk().await.with_context(failed)? {
+        bytes.extend_from_slice(&chunk);
+        if bytes.len() as u64 > asset.size {
+            break; // Oversized; rejected below without reading the rest.
+        }
+        if let Some(progress) = &mut progress {
+            progress.update(bytes.len() as u64);
+        }
+    }
+    drop(progress);
+
     if bytes.len() as u64 != asset.size {
         return Err(eyre!(
             "Downloaded {} bytes of {}, expected {}; not replacing the binary",
@@ -103,7 +116,59 @@ async fn download(client: &reqwest::Client, asset: &Asset) -> Result<Vec<u8>> {
             asset.size
         ));
     }
-    Ok(bytes.to_vec())
+    Ok(bytes)
+}
+
+/// Single-line progress bar redrawn in place with `\r`; ends the line when dropped, so
+/// an error mid-download is not printed on the end of the bar.
+struct Progress {
+    total: u64,
+    last_percent: Option<u64>,
+}
+
+impl Progress {
+    fn new(total: u64) -> Self {
+        let mut progress = Self { total, last_percent: None };
+        progress.update(0);
+        progress
+    }
+
+    fn update(&mut self, done: u64) {
+        let percent = percent(done, self.total);
+        if self.last_percent == Some(percent) {
+            return; // Only redraw when the visible percentage changes.
+        }
+        self.last_percent = Some(percent);
+        print!("\r{}", render_bar(done, self.total, 30));
+        let _ = io::stdout().flush();
+    }
+}
+
+impl Drop for Progress {
+    fn drop(&mut self) {
+        println!();
+    }
+}
+
+fn percent(done: u64, total: u64) -> u64 {
+    (done.min(total) * 100).checked_div(total).unwrap_or(100)
+}
+
+/// `[██████░░░░]  60%  3618/6030 KiB` with a bar of `width` cells.
+fn render_bar(done: u64, total: u64, width: usize) -> String {
+    let filled = if total == 0 {
+        width
+    } else {
+        (done.min(total) as u128 * width as u128 / total as u128) as usize
+    };
+    format!(
+        "[{}{}] {:>3}%  {}/{} KiB",
+        "█".repeat(filled),
+        "░".repeat(width - filled),
+        percent(done, total),
+        done / 1024,
+        total / 1024
+    )
 }
 
 /// Checks `bin` against its Ed25519 `signature`. The signed message is `"<asset> <tag>\n"`
@@ -199,8 +264,8 @@ pub async fn run() -> Result<()> {
     }
 
     println!("Downloading {} ({} KiB)...", asset.name, asset.size / 1024);
-    let bytes = download(&client, asset).await?;
-    let signature = download(&client, sig_asset).await?;
+    let bytes = download(&client, asset, io::stdout().is_terminal()).await?;
+    let signature = download(&client, sig_asset, false).await?;
     verify(&public_key, &bytes, &signature, &format!("{asset_name} {}", latest.tag_name))?;
     println!("{}", "Signature verified.".green());
 
@@ -270,6 +335,14 @@ mod tests {
     #[test]
     fn rejects_garbage_signature() {
         assert!(verify(&test_key(), PAYLOAD, b"not a signature", "rcmate-linux v9.9.9").is_err());
+    }
+
+    #[test]
+    fn renders_progress_bar() {
+        assert_eq!(render_bar(0, 2048, 4), "[░░░░]   0%  0/2 KiB");
+        assert_eq!(render_bar(1024, 2048, 4), "[██░░]  50%  1/2 KiB");
+        assert_eq!(render_bar(2048, 2048, 4), "[████] 100%  2/2 KiB");
+        assert_eq!(render_bar(0, 0, 4), "[████] 100%  0/0 KiB");
     }
 
     #[test]
